@@ -1,0 +1,30 @@
+{
+  "rules": {
+    "rooms": {
+      "$room": {
+        "m": {
+          ".read": "$room.length == 64",
+          "$k": {
+            ".write": "$room.length == 64 && !data.exists()",
+            ".validate": "newData.hasChildren(['c', 't']) && newData.child('c').isString() && newData.child('c').val().length < 400000"
+          }
+        },
+        "s": {
+          ".read": "$room.length == 64",
+          "$member": {
+            ".write": "$room.length == 64 && $member.length == 32"
+          }
+        },
+        "b": {
+          "$blob": {
+            ".read": "$room.length == 64 && $blob.length == 32",
+            "$i": {
+              ".write": "$room.length == 64 && $blob.length == 32",
+              ".validate": "newData.isString() && newData.val().length < 1000000"
+            }
+          }
+        }
+      }
+    }
+  }
+}

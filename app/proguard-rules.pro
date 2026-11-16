@@ -1,0 +1,5 @@
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+-dontwarn org.jetbrains.annotations.**
+-keep class com.journeyapps.barcodescanner.** { *; }
