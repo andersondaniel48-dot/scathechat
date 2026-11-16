@@ -167,6 +167,7 @@ fun ChatScreen() {
     val showInvite by Repo.showInvite.collectAsState()
     val shares by Repo.pendingShare.collectAsState()
     val update by Updater.available.collectAsState()
+    val fg by Repo.fg.collectAsState()
     val myId = me?.id ?: return
 
     var sheet by remember { mutableStateOf<Sheet?>(null) }
@@ -176,9 +177,9 @@ fun ChatScreen() {
     var askBattery by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val rows = remember(state.messages) { buildRows(state.messages) }
-    val now by produceState(System.currentTimeMillis()) {
+    val now by produceState(Repo.now()) {
         while (true) {
-            delay(30_000); value = System.currentTimeMillis()
+            delay(30_000); value = Repo.now()
         }
     }
 
@@ -198,8 +199,8 @@ fun ChatScreen() {
         onDispose { Repo.viewing = false }
     }
     val atBottom by remember { derivedStateOf { listState.firstVisibleItemIndex <= 1 } }
-    LaunchedEffect(atBottom, state.messages.size, Repo.foreground) {
-        if (atBottom && Repo.foreground) Repo.markRead()
+    LaunchedEffect(atBottom, state.messages.size, fg) {
+        if (atBottom && fg) Repo.markRead()
     }
     // Follow new messages when already at the bottom, or when I send one.
     val newest = state.messages.lastOrNull()

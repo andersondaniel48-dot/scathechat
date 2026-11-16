@@ -90,7 +90,10 @@ object Repo {
     val pendingShare = MutableStateFlow<List<Uri>>(emptyList())
     val showInvite = MutableStateFlow(false)
 
+    val fg = MutableStateFlow(false)
+    @Volatile private var useQuery = true
     @Volatile var foreground = false
+        set(v) { field = v; fg.value = v }
     @Volatile var viewing = false
     @Volatile private var serverOffset = 0L
     fun now(): Long = System.currentTimeMillis() + serverOffset
@@ -202,7 +205,7 @@ object Repo {
         if (conn.value != Conn.ERROR) conn.value = Conn.CONNECTING
         suppressNotify = lastKey == null
         val rt = rtdb(g)
-        val ms = rt.stream("rooms/${g.roomId}/m", lastKey, listener(myGen, isMain = true) { t, p, d -> onMsgEvent(t, p, d) })
+        val ms = rt.stream("rooms/${g.roomId}/m", if (useQuery) lastKey else null, listener(myGen, isMain = true) { t, p, d -> onMsgEvent(t, p, d) })
         val ss = rt.stream("rooms/${g.roomId}/s", null, listener(myGen, isMain = false) { t, p, d -> onStateEvent(t, p, d) })
         synchronized(lock) {
             if (myGen == gen) {
@@ -250,6 +253,12 @@ object Repo {
         override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
             if (myGen != gen) return
             val code = response?.code
+            if (isMain && code == 400 && useQuery) {
+                // Server didn't accept the "only new messages" query: fall back to a full stream.
+                useQuery = false
+                scope.launch { connect() }
+                return
+            }
             if (code == 401 || code == 403) {
                 connError.value = "The database refused access. Check the security rules."
                 conn.value = Conn.ERROR
