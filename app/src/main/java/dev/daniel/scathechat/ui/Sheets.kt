@@ -154,11 +154,12 @@ fun MembersSheet(members: Map<String, Member>, myId: String, now: Long, onDismis
                 color = C.Dim, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
             )
             members.values.sortedWith(compareBy({ it.id != myId }, { it.name.lowercase() })).forEach { m ->
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    MemberDot(m)
-                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                        Text(m.name + if (m.id == myId) " (you)" else "", color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Text(if (m.id == myId) "this phone" else lastSeen(m, now), color = if (m.id != myId && isOnline(m, now)) C.Online else C.Dim, fontSize = 13.sp)
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    CallingCard(
+                        m.card, m.name + if (m.id == myId) " (you)" else "",
+                        if (m.id == myId) "this phone" else lastSeen(m, now), m.emblem, m.emblemColor, Modifier.fillMaxWidth(),
+                    )
+                    Column(Modifier.padding(start = 4.dp, top = 4.dp)) {
                         when {
                             m.keyChanged -> Text("⚠ Security key changed. New messages under this name may not really be from ${m.name}.", color = Color(0xFFFFB4A0), fontSize = 12.sp)
                             m.pub != null -> Text("🔒 Messages signed by this phone", color = C.Faint, fontSize = 12.sp)

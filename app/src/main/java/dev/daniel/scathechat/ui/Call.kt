@@ -148,6 +148,10 @@ private fun IncomingScreen(inc: CallManager.Incoming, onAccept: () -> Unit) {
             Text(who?.name ?: "Your brother", style = fireText(38.sp))
             Spacer(Modifier.height(6.dp))
             Text(if (inc.video) "Incoming video call" else "Incoming voice call", color = C.Bone, fontSize = 16.sp)
+            if (who != null) {
+                Spacer(Modifier.height(22.dp))
+                CallingCard(who.card, who.name, if (inc.video) "wants you on video" else "is calling", who.emblem, who.emblemColor, Modifier.fillMaxWidth())
+            }
             Spacer(Modifier.weight(1f))
         }
         Row(

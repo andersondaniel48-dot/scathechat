@@ -432,6 +432,7 @@ object Repo {
             out[id] = Member(
                 id, prof.optString("n", "?"), prof.optInt("c", 0), o.str("r"), o.optLong("a", 0L), prof.str("z"),
                 typing = o.optLong("t", 0L), pub = pub, keyChanged = changed, fcm = prof.str("f"),
+                card = prof.str("cc"), emblem = prof.str("em"), emblemColor = if (prof.has("ec")) prof.optInt("ec") else null,
             )
         }
         me.value?.let { m ->
@@ -868,6 +869,9 @@ object Repo {
                 val prof = JSONObject().put("n", m.name).put("c", m.color).put("z", ZoneId.systemDefault().id).apply {
                     Identity.publicKey()?.let { put("k", it) }
                     prefs.fcmToken?.let { put("f", it) }
+                    put("cc", dev.daniel.scathechat.ui.Style.card.value)
+                    put("em", dev.daniel.scathechat.ui.Style.emblem.value)
+                    put("ec", dev.daniel.scathechat.ui.Style.emblemColor.intValue)
                 }.toString().toByteArray(Charsets.UTF_8)
                 val box = Crypto.seal(g.key, prof, g.profileAad(m.id))
                 rtdb(g).put("rooms/${g.roomId}/s/${m.id}/p", JSONObject.quote(Crypto.b64(box)))

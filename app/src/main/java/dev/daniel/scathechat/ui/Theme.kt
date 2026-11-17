@@ -22,21 +22,22 @@ import dev.daniel.scathechat.data.Repo
  * Glass picks up white specular light on its top edge and ember light on its bottom edge.
  */
 object C {
-    val Char = Color(0xFF0E0806) // burnt base
-    val Soot = Color(0xFF1A0E0A) // lifted base, top of the gradient
-    val Ember = Color(0xFFFF5A1F) // primary fire
-    val Flame = Color(0xFFFFB23F) // hot highlight
-    val Blood = Color(0xFFA8101C) // deep red, bottom of molten glass
+    // These follow the equipped theme (Loadout > Theme); reading them in a composable recomposes on change.
+    val Char: Color get() = Style.theme.char // burnt base
+    val Soot: Color get() = Style.theme.soot // lifted base, top of the gradient
+    val Ember: Color get() = Style.theme.ember // primary fire
+    val Flame: Color get() = Style.theme.flame // hot highlight
+    val Blood: Color get() = Style.theme.blood // deep red, bottom of molten glass
     val Bone = Color(0xFFF5EADF) // text
     val Smoke = Color(0xFFAE9D90) // secondary text
 
     // Roles used across the app
-    val Bg = Char
+    val Bg: Color get() = Char
     val Bar = Color(0xF2160D0A) // sheet glass
     val Field = Color(0x1AFFFFFF) // glass input / chip fill
     val Other = Color(0x17FFFFFF) // others' bubbles
-    val Mine = Ember
-    val Crimson = Ember // primary accent
+    val Mine: Color get() = Ember
+    val Crimson: Color get() = Ember // primary accent
     val Text = Bone
     val Dim = Smoke
     val Faint = Color(0xFF6E6159)

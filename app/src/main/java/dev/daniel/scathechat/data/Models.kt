@@ -71,6 +71,9 @@ data class Member(
     val pub: String? = null, // public signing key
     val keyChanged: Boolean = false,
     val fcm: String? = null, // push token
+    val card: String? = null, // calling card
+    val emblem: String? = null,
+    val emblemColor: Int? = null,
 )
 
 enum class Conn { CONNECTING, ONLINE, OFFLINE, ERROR }

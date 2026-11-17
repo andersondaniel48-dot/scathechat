@@ -104,13 +104,7 @@ fun MessageRow(
     highlight: Boolean = false,
 ) {
     val glow by androidx.compose.animation.core.animateFloatAsState(if (highlight) 1f else 0f, androidx.compose.animation.core.tween(400), label = "hl")
-    val big = 18.dp
-    val small = 5.dp
-    val shape = if (mine) {
-        RoundedCornerShape(topStart = big, topEnd = if (first) big else small, bottomEnd = if (last) big else small, bottomStart = big)
-    } else {
-        RoundedCornerShape(topStart = if (first) big else small, topEnd = big, bottomEnd = big, bottomStart = if (last) big else small)
-    }
+    val shape = bubbleShape(mine, first, last)
     val jumbo = isJumbo(m)
 
     Column(
@@ -121,14 +115,17 @@ fun MessageRow(
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
     ) {
         if (!mine && first) {
-            Text(
-                sender?.name ?: "Unknown",
-                color = C.member(sender?.color ?: 0),
-                fontSize = 12.sp,
-                fontFamily = Display,
-                letterSpacing = 0.5.sp,
-                modifier = Modifier.padding(start = 12.dp, bottom = 3.dp),
-            )
+            Row(Modifier.padding(start = 8.dp, bottom = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                Emblem(sender?.emblem, sender?.emblemColor, 18.dp)
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    sender?.name ?: "Unknown",
+                    color = C.member(sender?.color ?: 0),
+                    fontSize = 12.sp,
+                    fontFamily = Display,
+                    letterSpacing = 0.5.sp,
+                )
+            }
         }
         val clickMod = Modifier.combinedClickable(
             onClick = { if (m.status == Msg.FAILED) Repo.retry(m) else if (m.media != null) onOpenMedia() },
