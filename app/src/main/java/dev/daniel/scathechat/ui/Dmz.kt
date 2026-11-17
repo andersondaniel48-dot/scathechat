@@ -351,8 +351,7 @@ private sealed interface Sel {
  * plus pins the group drops for each other (synced, encrypted).
  */
 @Composable
-fun DmzScreen(onClose: () -> Unit) {
-    BackHandler(onBack = onClose)
+private fun DmzOwnMap(onClose: () -> Unit) {
     val ctx = LocalContext.current
     val density = LocalDensity.current
     val focus = LocalFocusManager.current
@@ -381,7 +380,7 @@ fun DmzScreen(onClose: () -> Unit) {
 
     val cam = remember { Cam() }
     val anim = remember { Animatable(0f) }
-    val topPad = with(density) { 190.dp.toPx() }
+    val topPad = with(density) { 165.dp.toPx() }
     val bottomPad = with(density) { 40.dp.toPx() }
 
     val bitmap by produceState<ImageBitmap?>(null, mapId, imgVersion) {
@@ -590,14 +589,12 @@ fun DmzScreen(onClose: () -> Unit) {
         }
 
         // ------------------------------------------------------------ header, search, layers
-        Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
             Row(
                 Modifier.fillMaxWidth().height(58.dp).glass(RoundedCornerShape(22.dp), fill = Color(0xCC140A06)).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to chat", tint = C.Bone) }
-                Text("DMZ", style = fireText(22.sp, glow = 0.6f))
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(8.dp))
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Dmz.maps.forEach { m ->
                         val on = m.id == mapId
@@ -1187,4 +1184,208 @@ private fun LinkDialog(onDismiss: () -> Unit, onGo: (String) -> Unit) {
         confirmButton = { TextButton(onClick = { if (url.startsWith("http")) onGo(url) }) { Text("Download", color = C.Flame) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = C.Smoke) } },
     )
+}
+
+
+// ================================================================ live interactive maps
+
+private data class WebMapSource(val id: String, val label: String, val url: String, val note: String)
+
+private val WEB_MAPS = listOf(
+    WebMapSource("codcentral", "COD Central", "https://codcentral.net/blog/mw4-dmz-map/", "Hajin and both X01 floors, keys, Lieutenants, towers"),
+    WebMapSource("official", "Official", "https://www.callofduty.com/guides/modernwarfare4/dmz-maps/hajin", "Activision's own Hajin tac map"),
+    WebMapSource("radar", "DMZ Radar", "https://dmzradar.com/map.html", "Hajin key rooms, exfils, spawns, caches"),
+    WebMapSource("x01", "X01", "https://dmzmap.com/x01/map", "Both X01 floors with keycard rooms and exits"),
+)
+
+/** Type [q] into the page's own search box (whatever map site it is), then pick the first matching result. */
+private fun webSearch(wv: android.webkit.WebView, q: String, onResult: (Boolean) -> Unit) {
+    val js = """
+        (function(q){
+          var vis = function(e){ var r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+          var ins = Array.prototype.slice.call(document.querySelectorAll('input')).filter(function(i){
+            var t = ((i.placeholder||'') + ' ' + (i.type||'') + ' ' + (i.name||'') + ' ' + (i.getAttribute('aria-label')||'') + ' ' + (i.id||'')).toLowerCase();
+            return vis(i) && /search|find|filter|marker|key|location/.test(t);
+          });
+          if (!ins.length) ins = Array.prototype.slice.call(document.querySelectorAll('input[type=text],input:not([type])')).filter(vis);
+          var el = ins[0];
+          if (!el) return 'none';
+          el.scrollIntoView({block:'center'});
+          el.focus();
+          var set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+          set.call(el, q);
+          el.dispatchEvent(new Event('input', {bubbles:true}));
+          el.dispatchEvent(new Event('change', {bubbles:true}));
+          ['keydown','keypress','keyup'].forEach(function(t){ el.dispatchEvent(new KeyboardEvent(t, {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true})); });
+          setTimeout(function(){
+            var lq = q.toLowerCase();
+            var c = Array.prototype.slice.call(document.querySelectorAll('li,button,a,[role=option],[role=button],div,span')).filter(function(e){
+              if (e === el || !vis(e) || e.children.length > 6) return false;
+              var t = (e.textContent||'').trim().toLowerCase();
+              return t.indexOf(lq) === 0 && t.length < lq.length + 80;
+            });
+            c.sort(function(a,b){ return (a.textContent||'').length - (b.textContent||'').length; });
+            if (c[0]) { c[0].click(); el.blur(); }
+          }, 700);
+          return 'ok';
+        })(${org.json.JSONObject.quote(q)});
+    """.trimIndent()
+    wv.evaluateJavascript(js) { r -> onResult(r?.contains("ok") == true) }
+}
+
+@android.annotation.SuppressLint("SetJavaScriptEnabled")
+private fun makeWebView(ctx: Context, url: String, onProgress: (Int) -> Unit): android.webkit.WebView =
+    android.webkit.WebView(ctx).apply {
+        setBackgroundColor(0xFF0B0705.toInt())
+        settings.javaScriptEnabled = true
+        settings.domStorageEnabled = true
+        settings.loadWithOverviewMode = true
+        settings.useWideViewPort = true
+        settings.setSupportZoom(true)
+        settings.builtInZoomControls = true
+        settings.displayZoomControls = false
+        settings.mediaPlaybackRequiresUserGesture = true
+        webViewClient = object : android.webkit.WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: android.webkit.WebView, request: android.webkit.WebResourceRequest): Boolean {
+                val scheme = request.url.scheme ?: return true
+                return scheme != "http" && scheme != "https" // keep map links inside; ignore app-store / intent links
+            }
+        }
+        webChromeClient = object : android.webkit.WebChromeClient() {
+            override fun onProgressChanged(view: android.webkit.WebView, newProgress: Int) = onProgress(newProgress)
+        }
+        loadUrl(url)
+    }
+
+/**
+ * DMZ mode: the best live interactive maps (pins on the actual buildings, sharp zoom), with our search,
+ * door descriptions and Send to chat on top, plus our own map for the group's pins.
+ */
+@Composable
+fun DmzScreen(onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    val prefs = remember { ctx.getSharedPreferences("dmz", 0) }
+    var source by rememberSaveable { mutableStateOf(prefs.getString("web_src", WEB_MAPS.first().id) ?: WEB_MAPS.first().id) }
+    val webViews = remember { HashMap<String, android.webkit.WebView>() }
+    var progress by remember { mutableIntStateOf(100) }
+    val focus = LocalFocusManager.current
+
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { webViews.values.forEach { it.destroy() }; webViews.clear() } }
+    BackHandler {
+        val wv = webViews[source]
+        if (source != "pins" && wv?.canGoBack() == true) wv.goBack() else onClose()
+    }
+
+    Column(Modifier.fillMaxSize().background(Color(0xFF0B0705))) {
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().padding(start = 10.dp, end = 10.dp, top = 6.dp)
+                .height(56.dp).glass(RoundedCornerShape(22.dp), fill = Color(0xCC140A06)).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to chat", tint = C.Bone) }
+            Text("DMZ", style = fireText(22.sp, glow = 0.6f))
+            Spacer(Modifier.width(10.dp))
+            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                (WEB_MAPS.map { it.id to it.label } + ("pins" to "Group pins")).forEach { (id, label) ->
+                    val on = id == source
+                    val shape = RoundedCornerShape(14.dp)
+                    Text(
+                        label, color = if (on) Color.White else C.Smoke, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .then(if (on) Modifier.molten(shape) else Modifier.glass(shape, fill = Color(0x30140A06), rim = 0.5f))
+                            .clickable { if (!on) { focus.clearFocus(); source = id; prefs.edit().putString("web_src", id).apply() } }
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                    )
+                }
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (source == "pins") DmzOwnMap(onClose)
+            else {
+                val src = WEB_MAPS.first { it.id == source }
+                androidx.compose.runtime.key(src.id) {
+                    androidx.compose.ui.viewinterop.AndroidView(
+                        factory = { c ->
+                            val wv = webViews.getOrPut(src.id) { makeWebView(c, src.url) { progress = it } }
+                            (wv.parent as? android.view.ViewGroup)?.removeView(wv)
+                            wv
+                        },
+                        modifier = Modifier.fillMaxSize().padding(top = 64.dp),
+                    )
+                }
+                if (progress < 100) androidx.compose.material3.LinearProgressIndicator(
+                    progress = { progress / 100f }, color = C.Ember, trackColor = Color.Transparent,
+                    modifier = Modifier.fillMaxWidth().padding(top = 64.dp).height(2.dp),
+                )
+                WebSearchOverlay(src, webViews[src.id])
+            }
+        }
+    }
+}
+
+/** Our search (every key room and place, with door descriptions) driving the live map's own search. */
+@Composable
+private fun WebSearchOverlay(src: WebMapSource, wv: android.webkit.WebView?) {
+    val focus = LocalFocusManager.current
+    val members by Repo.members.collectAsState()
+    val me by Repo.me.collectAsState()
+    var query by rememberSaveable { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
+    var sel by remember { mutableStateOf<Sel?>(null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    val results = remember(query) { Dmz.search(query) }
+
+    fun pick(hit: Dmz.Hit) {
+        focus.clearFocus(); searching = false
+        sel = if (hit.spot != null) Sel.SpotSel(hit.spot) else Sel.ZoneSel(hit.zone!!)
+        note = null
+        val q = hit.name
+        wv?.let { webSearch(it, q) { ok -> if (!ok) note = "${src.label} has no search box here; the card says where it is." } }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Row(
+                Modifier.fillMaxWidth().height(50.dp).glass(RoundedCornerShape(18.dp), fill = Color(0xEE140A06)).padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.Search, null, tint = C.Smoke, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.weight(1f)) {
+                    if (query.isEmpty()) Text("Find a key room or place on ${src.label}…", color = C.Faint, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    BasicTextField(
+                        value = query, onValueChange = { query = it; searching = true }, singleLine = true,
+                        textStyle = TextStyle(color = C.Bone, fontSize = 15.sp), cursorBrush = SolidColor(C.Ember),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { results.firstOrNull()?.let { pick(it) } }),
+                        modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) searching = true },
+                    )
+                }
+                if (query.isNotEmpty()) IconButton(onClick = { query = ""; searching = false; sel = null; focus.clearFocus() }, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Filled.Close, "Clear search", tint = C.Smoke)
+                }
+            }
+            if (searching && query.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Box(Modifier.fillMaxWidth().heightIn(max = 360.dp).glass(RoundedCornerShape(18.dp), fill = Color(0xF2140A06))) {
+                    if (results.isEmpty()) Text("Nothing matches \"$query\".", color = C.Smoke, fontSize = 14.sp, modifier = Modifier.padding(16.dp))
+                    else LazyColumn(Modifier.padding(vertical = 6.dp)) { items(results) { hit -> ResultRow(hit) { pick(hit) } } }
+                }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(10.dp)) {
+            note?.let {
+                Text(
+                    it, color = C.Smoke, fontSize = 12.sp,
+                    modifier = Modifier.glass(RoundedCornerShape(14.dp), fill = Color(0xEE140A06)).clickable { note = null }.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            sel?.let { s ->
+                val mapOf = when (s) { is Sel.SpotSel -> Dmz.map(s.spot.map); is Sel.ZoneSel -> Dmz.map(s.zone.map); is Sel.PinSel -> Dmz.map(s.pin.map) }
+                DetailCard(s, mapOf, members.mapValues { it.value.name }, me?.id, onClose = { sel = null }, onDeletePin = {})
+            }
+        }
+    }
 }
