@@ -13,6 +13,7 @@ import dev.daniel.scathechat.net.LinkPreview
 import dev.daniel.scathechat.net.Rtdb
 import dev.daniel.scathechat.service.ChatService
 import dev.daniel.scathechat.service.Notifier
+import dev.daniel.scathechat.service.Reminders
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -37,6 +38,7 @@ import okhttp3.sse.EventSourceListener
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.File
+import java.time.ZoneId
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.util.Collections
@@ -346,6 +348,7 @@ object Repo {
         val g = group.value ?: return
         for (m in fresh) {
             if (m.ts < now() - 10 * 60_000) continue
+            if (m.type == "vote") continue
             if (m.type == "react") {
                 val target = m.target?.let { chat.value.byId[it] } ?: continue
                 if (target.from != myId || m.emoji.isNullOrEmpty()) continue
@@ -401,9 +404,9 @@ object Repo {
             } catch (e: Exception) {
                 return@forEach
             }
-            out[id] = Member(id, prof.optString("n", "?"), prof.optInt("c", 0), o.str("r"), o.optLong("a", 0L))
+            out[id] = Member(id, prof.optString("n", "?"), prof.optInt("c", 0), o.str("r"), o.optLong("a", 0L), prof.str("z"))
         }
-        me.value?.let { m -> if (m.id !in out) out[m.id] = Member(m.id, m.name, m.color, lastReadSent, now()) }
+        me.value?.let { m -> if (m.id !in out) out[m.id] = Member(m.id, m.name, m.color, lastReadSent, now(), ZoneId.systemDefault().id) }
         members.value = out
     }
 
@@ -411,7 +414,17 @@ object Repo {
         val snapshot: List<Msg> = synchronized(lock) { ArrayList(all.values) }
         val reacts = HashMap<String, HashMap<String, Pair<Long, String>>>()
         val list = ArrayList<Msg>(snapshot.size)
+        val eventMsgs = HashMap<String, ArrayList<Msg>>()
+        val votes = HashMap<String, HashMap<String, Msg>>() // eid -> member -> newest vote
         for (m in snapshot) {
+            if (m.type == "vote") {
+                val eid = m.target ?: continue
+                val per = votes.getOrPut(eid) { HashMap() }
+                val prev = per[m.from]
+                if (prev == null || prev.ts <= m.ts) per[m.from] = m
+                continue
+            }
+            if (m.type == "event") m.event?.let { eventMsgs.getOrPut(it.eid) { ArrayList() }.add(m) }
             if (m.type == "react") {
                 val t = m.target ?: continue
                 val per = reacts.getOrPut(t) { HashMap() }
@@ -427,7 +440,18 @@ object Repo {
             val m = per.filterValues { it.second.isNotEmpty() }.mapValues { it.value.second }
             if (m.isNotEmpty()) rmap[t] = m
         }
-        chat.value = ChatState(list, rmap, list.associateBy { it.id })
+        val events = eventMsgs.map { (eid, ms) ->
+            ms.sortWith(compareBy<Msg>({ it.ts }, { it.key ?: "~" }))
+            CalEvent(
+                info = ms.last().event!!,
+                creator = ms.first().from,
+                created = ms.first().ts,
+                votes = votes[eid]?.mapValues { it.value.votes ?: emptyMap() } ?: emptyMap(),
+            )
+        }.sortedBy { it.info.start ?: it.info.slots.firstOrNull() ?: it.created }
+        val old = chat.value.events
+        chat.value = ChatState(events, list, rmap, list.associateBy { it.id })
+        if (events != old) scope.launch { Reminders.sync(app, events, me.value?.id) }
     }
 
     // ---------------------------------------------------------------- outgoing
@@ -467,6 +491,23 @@ object Repo {
         val myId = me.value?.id ?: return
         val mine = chat.value.reactions[target.id]?.get(myId)
         val m = newMsg("react").copy(target = target.id, emoji = if (mine == emoji) "" else emoji)
+        put(m)
+        scope.launch { deliver(m) }
+    }
+
+    fun saveEvent(info: EventInfo) {
+        if (me.value == null) return
+        val m = newMsg("event").copy(event = info.copy(tz = info.tz ?: ZoneId.systemDefault().id))
+        put(m)
+        scope.launch { deliver(m) }
+    }
+
+    /** Sets my availability for one slot ("y", "m", "n", or "" to clear). */
+    fun vote(eid: String, slot: Long, value: String) {
+        val myId = me.value?.id ?: return
+        val current = chat.value.events.firstOrNull { it.info.eid == eid }?.votes?.get(myId) ?: emptyMap()
+        val next = if (value.isEmpty()) current - slot else current + (slot to value)
+        val m = newMsg("vote").copy(target = eid, votes = next)
         put(m)
         scope.launch { deliver(m) }
     }
@@ -652,7 +693,8 @@ object Repo {
         val m = me.value ?: return
         scope.launch {
             try {
-                val prof = JSONObject().put("n", m.name).put("c", m.color).toString().toByteArray(Charsets.UTF_8)
+                val prof = JSONObject().put("n", m.name).put("c", m.color).put("z", ZoneId.systemDefault().id)
+                    .toString().toByteArray(Charsets.UTF_8)
                 val box = Crypto.seal(g.key, prof, g.profileAad(m.id))
                 rtdb(g).put("rooms/${g.roomId}/s/${m.id}/p", JSONObject.quote(Crypto.b64(box)))
             } catch (e: Exception) {

@@ -45,6 +45,9 @@ import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Image
@@ -171,6 +174,7 @@ fun ChatScreen() {
     val myId = me?.id ?: return
 
     var sheet by remember { mutableStateOf<Sheet?>(null) }
+    var showCalendar by rememberSaveable { mutableStateOf(false) }
     var actionsFor by remember { mutableStateOf<Msg?>(null) }
     var viewer by remember { mutableStateOf<Msg?>(null) }
     var replyTo by remember { mutableStateOf<Msg?>(null) }
@@ -272,6 +276,11 @@ fun ChatScreen() {
             onMembers = { sheet = Sheet.MEMBERS },
             onInvite = { sheet = Sheet.INVITE },
             onSettings = { sheet = Sheet.SETTINGS },
+            onCalendar = { showCalendar = true },
+            upcoming = state.events.count { e ->
+                val s = e.info.start
+                !e.info.cancelled && (e.info.isPoll || (s != null && s + e.info.dur * 60_000L > now))
+            },
         )
         if (update != null) {
             Row(
@@ -297,7 +306,9 @@ fun ChatScreen() {
                 items(rows, key = { it.key }, contentType = { if (it is Row.Day) 0 else 1 }) { row ->
                     when (row) {
                         is Row.Day -> DayChip(row.label)
-                        is Row.Bubble -> {
+                        is Row.Bubble -> if (row.m.type == "event") {
+                            EventChatCard(row.m, members, myId) { showCalendar = true }
+                        } else {
                             val m = row.m
                             val mine = m.from == myId
                             val readByAll = mine && m.key != null && others.isNotEmpty() &&
@@ -358,6 +369,8 @@ fun ChatScreen() {
             onFiles = { pickFiles.launch(arrayOf("*/*")) },
         )
     }
+
+    if (showCalendar) CalendarScreen(onClose = { showCalendar = false })
 
     actionsFor?.let { m ->
         ActionsSheet(
@@ -456,6 +469,8 @@ private fun TopBar(
     onMembers: () -> Unit,
     onInvite: () -> Unit,
     onSettings: () -> Unit,
+    onCalendar: () -> Unit,
+    upcoming: Int,
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(
@@ -479,10 +494,15 @@ private fun TopBar(
             Text(title, color = C.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(subtitle, color = if (subtitleAlert) Color(0xFFFFB4B4) else C.Dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        IconButton(onClick = onInvite) { Icon(Icons.Filled.QrCode, "Invite", tint = C.Text) }
+        IconButton(onClick = onCalendar) {
+            BadgedBox(badge = { if (upcoming > 0) Badge(containerColor = C.Crimson) { Text("$upcoming") } }) {
+                Icon(Icons.Filled.CalendarMonth, "Calendar", tint = C.Text)
+            }
+        }
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Menu", tint = C.Text) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("Calendar") }, leadingIcon = { Icon(Icons.Filled.CalendarMonth, null) }, onClick = { menu = false; onCalendar() })
                 DropdownMenuItem(text = { Text("Members") }, leadingIcon = { Icon(Icons.Filled.Group, null) }, onClick = { menu = false; onMembers() })
                 DropdownMenuItem(text = { Text("Invite a brother") }, leadingIcon = { Icon(Icons.Filled.QrCode, null) }, onClick = { menu = false; onInvite() })
                 DropdownMenuItem(text = { Text("Settings") }, leadingIcon = { Icon(Icons.Filled.Settings, null) }, onClick = { menu = false; onSettings() })

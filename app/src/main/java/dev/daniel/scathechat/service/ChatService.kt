@@ -141,6 +141,26 @@ object Notifier {
         }
     }
 
+    fun reminder(ctx: Context, id: Int, title: String, text: String) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
+        val n = NotificationCompat.Builder(ctx, CH_MSG)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setColor(0xFFE5383B.toInt())
+            .setContentTitle(title)
+            .setContentText(text)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(openApp(ctx))
+            .build()
+        try {
+            NotificationManagerCompat.from(ctx).notify(id, n)
+        } catch (_: SecurityException) {
+        }
+    }
+
     fun clear(ctx: Context) {
         synchronized(recent) { recent.clear() }
         NotificationManagerCompat.from(ctx).cancel(MSG_ID)

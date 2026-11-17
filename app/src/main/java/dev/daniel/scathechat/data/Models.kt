@@ -57,7 +57,7 @@ class Group(val dbUrl: String, val secret: ByteArray, val name: String) {
 
 data class Me(val id: String, val name: String, val color: Int)
 
-data class Member(val id: String, val name: String, val color: Int, val read: String?, val active: Long)
+data class Member(val id: String, val name: String, val color: Int, val read: String?, val active: Long, val tz: String? = null)
 
 enum class Conn { CONNECTING, ONLINE, OFFLINE, ERROR }
 
@@ -71,6 +71,46 @@ data class LinkInfo(val url: String, val title: String?, val desc: String?, val 
             o ?: return null
             val u = o.str("u") ?: return null
             return LinkInfo(u, o.str("t"), o.str("d"), o.str("s"), o.str("i"))
+        }
+    }
+}
+
+/**
+ * A calendar event. Every change is a new encrypted "event" message with the same [eid];
+ * the newest one wins. One slot = scheduled; several slots = a time poll until [final] is set.
+ */
+data class EventInfo(
+    val eid: String,
+    val kind: String, // filth, cod, other
+    val title: String,
+    val note: String?,
+    val slots: List<Long>, // start times, epoch millis (UTC)
+    val dur: Int, // minutes
+    val final: Long?, // locked-in start time
+    val cancelled: Boolean,
+    val tz: String?, // creator's zone, for reference
+    val act: String, // new, lock, edit, cancel
+) {
+    val start: Long? get() = final ?: slots.singleOrNull()
+    val isPoll: Boolean get() = final == null && slots.size > 1
+
+    fun toJson(): JSONObject = JSONObject().put("e", eid).put("k", kind).put("t", title).put("d", dur)
+        .put("s", org.json.JSONArray(slots)).put("x", cancelled).put("a", act).apply {
+            note?.let { put("n", it) }; final?.let { put("f", it) }; tz?.let { put("z", it) }
+        }
+
+    companion object {
+        fun from(o: JSONObject?): EventInfo? {
+            o ?: return null
+            val eid = o.str("e") ?: return null
+            val arr = o.optJSONArray("s")
+            val slots = ArrayList<Long>()
+            if (arr != null) for (i in 0 until arr.length()) slots.add(arr.optLong(i))
+            return EventInfo(
+                eid, o.optString("k", "other"), o.optString("t", "Event"), o.str("n"), slots.distinct().sorted(),
+                o.optInt("d", 120), if (o.has("f") && !o.isNull("f")) o.optLong("f") else null,
+                o.optBoolean("x", false), o.str("z"), o.optString("a", "new"),
+            )
         }
     }
 }
@@ -119,6 +159,8 @@ data class Msg(
     val replyTo: String? = null,
     val target: String? = null,
     val emoji: String? = null,
+    val event: EventInfo? = null,
+    val votes: Map<Long, String>? = null, // for type "vote": slot start -> y / m / n
     val status: Int = SENT,
 ) {
     fun toPayload(): JSONObject = JSONObject().apply {
@@ -129,6 +171,8 @@ data class Msg(
         emoji?.let { put("e", it) }
         link?.let { put("l", it.toJson()) }
         media?.let { put("m", it.toJson()) }
+        event?.let { put("ev", it.toJson()) }
+        votes?.let { v -> put("vt", JSONObject().apply { v.forEach { (k, x) -> put(k.toString(), x) } }) }
     }
 
     fun toStore(): JSONObject = toPayload().apply {
@@ -141,6 +185,8 @@ data class Msg(
         type == "media" && media?.kind == "video" -> "🎬 Video"
         type == "media" -> "📎 " + (media?.name ?: "File")
         type == "react" -> "Reacted ${emoji ?: ""}"
+        type == "event" && event != null -> eventPreview(event)
+        type == "vote" -> "Voted on a time"
         else -> text ?: link?.url ?: ""
     }
 
@@ -161,13 +207,44 @@ data class Msg(
             replyTo = o.str("r"),
             target = o.str("tg"),
             emoji = if (o.has("e")) o.optString("e") else null,
+            event = EventInfo.from(o.optJSONObject("ev")),
+            votes = o.optJSONObject("vt")?.let { v ->
+                val out = HashMap<Long, String>()
+                v.keys().forEach { k -> k.toLongOrNull()?.let { out[it] = v.optString(k) } }
+                out
+            },
         )
 
         fun fromStore(o: JSONObject): Msg = fromPayload(o, o.str("k"), o.optLong("t")).copy(status = o.optInt("st", SENT))
     }
 }
 
+fun kindEmoji(kind: String): String = when (kind) {
+    "filth" -> "💀"
+    "cod" -> "🎮"
+    else -> "📅"
+}
+
+fun eventPreview(e: EventInfo): String {
+    val head = kindEmoji(e.kind) + " " + e.title
+    return when (e.act) {
+        "lock" -> "$head · time locked in"
+        "cancel" -> "$head · cancelled"
+        "edit" -> "$head · updated"
+        else -> if (e.isPoll) "$head · vote on a time" else "$head · scheduled"
+    }
+}
+
+/** One event as seen in the calendar: its newest version plus everyone's votes. */
+data class CalEvent(
+    val info: EventInfo,
+    val creator: String,
+    val created: Long,
+    val votes: Map<String, Map<Long, String>>, // member -> slot -> y/m/n
+)
+
 data class ChatState(
+    val events: List<CalEvent> = emptyList(),
     val messages: List<Msg> = emptyList(),
     val reactions: Map<String, Map<String, String>> = emptyMap(), // target id -> member id -> emoji
     val byId: Map<String, Msg> = emptyMap(),

@@ -1,6 +1,9 @@
 package dev.daniel.scathechat.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Modifier
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -56,5 +59,7 @@ fun ScatheTheme(content: @Composable () -> Unit) {
 fun AppRoot() {
     val group by Repo.group.collectAsState()
     val me by Repo.me.collectAsState()
-    if (group == null || me == null) SetupScreen() else ChatScreen()
+    Box(Modifier.fillMaxSize()) {
+        if (group == null || me == null) SetupScreen() else ChatScreen()
+    }
 }
