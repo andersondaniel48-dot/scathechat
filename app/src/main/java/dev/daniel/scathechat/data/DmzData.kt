@@ -9,7 +9,8 @@ object Dmz {
     enum class Kind(val label: String) {
         KEY("Key room"), POI("Location"), AREA("Area"), EXFIL("Exfil"), BOSS("Boss"),
         STATION("Station"), POLICE("Police station"), BANK("Bank branch"), FIRE("Fire station"),
-        MARKET("Black market"), ENTRY("Entrance"),
+        MARKET("Black market"), ENTRY("Entrance"), CLINIC("Clinic"), GAS("Gas station"), CACHE("Ammo & armor cache"),
+        TOWER("Tower"), COMPOUND("Compound"), STRONGHOLD("Stronghold"),
     }
 
     enum class Threat(val label: String) { LOW("Low"), MEDIUM("Medium"), HIGH("High"), CRITICAL("Critical"), EXTREME("Extreme"), NONE("") }
@@ -20,14 +21,13 @@ object Dmz {
         val sources: List<String>, val hires: String? = null,
         /** The source images show exactly the whole grid, edge to edge (no grid drawn to detect). */
         val fullExtent: Boolean = false,
+        /** Drawn from the official map tiles (see [DmzOfficial]) instead of a single background image. */
+        val tiled: Boolean = false,
     )
 
     val maps = listOf(
         // Hajin's tac-map grid runs A–J and 0–9 (the X01 entrance is B0); the official map image covers it exactly.
-        MapDef("hajin", "Hajin", "Hajin", 10, 10, 0, listOf(
-            "https://mw4meta.com/images/tacmap/hajin-map-2048.webp",
-            "https://codmunity.gg/dmz/hajin-map-cod2-1120.webp",
-        ), fullExtent = true),
+        MapDef("hajin", "Hajin", "Hajin", 10, 10, 0, emptyList(), tiled = true),
         MapDef("x01_lower", "X01 · Lower floor (Deep Vault)", "X01 Lower", 10, 9, 0, listOf(
             "https://codcentral.net/assets/library/mw4/dmz/map/x01-floor-1-v4.webp",
         )),
@@ -37,13 +37,19 @@ object Dmz {
     )
     fun map(id: String) = maps.first { it.id == id }
 
+    /** [px]/[py]: exact position on the official map in map pixels, when known. */
     data class Spot(
         val id: String, val map: String, val name: String, val kind: Kind, val grid: String,
         val place: String, val detail: String, val rarity: String? = null,
+        val px: Float? = null, val py: Float? = null,
     )
 
     /** A named location drawn as a zone. cx/cy are in grid cells from the top-left (0..cols, 0..rows). */
-    data class Zone(val map: String, val name: String, val cx: Float, val cy: Float, val r: Float, val threat: Threat, val note: String = "")
+    data class Zone(
+        val map: String, val name: String, val cx: Float, val cy: Float, val r: Float, val threat: Threat, val note: String = "",
+        /** Drawn as a map label (like the in-game tac map) rather than an area circle. */
+        val label: Boolean = false, val major: Boolean = true,
+    )
 
     /** Grid "F4" -> column/row index on this map, or null. */
     fun cell(map: MapDef, grid: String): Pair<Int, Int>? {
@@ -139,11 +145,8 @@ object Dmz {
         add(k("Weapons Mod Workshop", "B5", "Chang-san Air Base", "Second floor.", "Rare"))
 
         // ------------------------------------------------------------ Hajin places
-        for (g in listOf("C5", "D3", "F4", "H5")) add(s("hajin", "Police Station", Kind.POLICE, g, "Police station", "Locked armory in the basement (Police Station Armory key). Roof overwatch."))
-        for (g in listOf("C6", "D8", "E4", "H6")) add(s("hajin", "Fire Station", Kind.FIRE, g, "Fire station", "Radiation gear and parachutes. Upstairs storage needs the Fire Station Storage key (not C6)."))
-        for (g in listOf("F4", "G6", "G7", "G8", "I7")) add(s("hajin", "Hanex Bank Branch", Kind.BANK, g, "Bank branch", "Vault needs the Bank Branch Vault Access keycard."))
-        add(s("hajin", "Black Market", Kind.MARKET, "B7", "Deadtown", "South Deadtown. Weapons locker in the basement back room."))
-        add(s("hajin", "Black Market", Kind.MARKET, "C2", "Hanrim Village", "East Hanrim Village, far north-west. Weapons locker in the basement."))
+        add(s("hajin", "Black Market", Kind.MARKET, "B7", "Deadtown", "South Deadtown. Weapons locker in the basement back room.").copy(px = 1180f, py = 2790f))
+        add(s("hajin", "Black Market", Kind.MARKET, "C2", "Hanrim Village", "East Hanrim Village, far north-west. Weapons locker in the basement.").copy(px = 1469f, py = 1398f))
         add(s("hajin", "X01 entrance", Kind.ENTRY, "B0", "North-west border", "Abandoned freight elevator straight north of the 14th Political Prison. Press the button by the gate and stay in the cage. You can also deploy straight into X01 from Select Location."))
 
         // ------------------------------------------------------------ X01 areas
@@ -193,28 +196,70 @@ object Dmz {
         add(s(L, "X01 3D Printer", Kind.STATION, "E5", "Production Assembly", "Upstairs office, west side of the Production Assembly."))
         add(s(L, "Keycard Encoder (Supply Depot)", Kind.STATION, "F2", "Supply Depot", "Encode a blank keycard into Maintenance Access or Executive Access."))
         add(s(L, "Keycard Encoder (Data Center)", Kind.STATION, "I5", "Data Center", "Encode a blank keycard into Engineering Access or Audit Officer Access."))
+
+        // ------------------------------------------------------------ Hajin: everything on Activision's official tac map
+        for (p in DmzOfficial.places) {
+            val k = when (p.kind) {
+                "POLICE" -> Kind.POLICE; "FIRE" -> Kind.FIRE; "CLINIC" -> Kind.CLINIC; "GAS" -> Kind.GAS; "CACHE" -> Kind.CACHE
+                "TOWER" -> Kind.TOWER; "COMPOUND" -> Kind.COMPOUND; else -> Kind.STRONGHOLD
+            }
+            val detail = when (k) {
+                Kind.POLICE -> "Locked armory in the basement (Police Station Armory key opens all of them). Roof overwatch."
+                Kind.FIRE -> "Radiation gear and parachutes. Upstairs storage (Fire Station Storage key)."
+                Kind.CLINIC -> "Medical supplies."
+                Kind.GAS -> if (p.name.startsWith("Marine")) "Boat fuel and supplies." else "Fuel and small supplies."
+                Kind.CACHE -> "Ammo and armor plates."
+                Kind.TOWER -> if (p.name.startsWith("UAV")) "Activate for a UAV sweep of the area." else "Shows nearby Lieutenants on your tac map."
+                Kind.COMPOUND -> "Guarded compound with loot."
+                else -> "Major stronghold on the official tac map."
+            }
+            add(s("hajin", p.name, k, gridAt(p.x, p.y), nearestLabel(p.x, p.y), detail).copy(px = p.x, py = p.y))
+        }
+    }.map { sp ->
+        // key rooms pinned to the building they're in
+        if (sp.map == "hajin" && sp.kind == Kind.KEY) DmzOfficial.keys["${sp.name}|${sp.grid}"]?.let { (x, y) -> sp.copy(px = x, py = y) } ?: sp else sp
     }
 
-    val zones = listOf(
-        // Placed against the official map on the A–J / 0–9 grid (cells from the top-left).
-        Zone("hajin", "14th Political Prison", 2.05f, 3.35f, 0.6f, Threat.HIGH, "North Korea. The Citadel is Critical."),
-        Zone("hajin", "Hanrim Village", 2.4f, 2.25f, 0.4f, Threat.NONE, "Far north-west. Black market."),
-        Zone("hajin", "Haneul Nuclear Reactor", 7.97f, 4.5f, 0.85f, Threat.HIGH, "Radiation: bring protection and a gas mask. Border Zone is Medium."),
-        Zone("hajin", "Cheongun Village", 4.95f, 4.2f, 0.75f, Threat.LOW, "Heavenly Luck Casino is High. Russian border crossing to the north."),
-        Zone("hajin", "Mirae General Hospital", 5.62f, 5.15f, 0.38f, Threat.LOW, "Beside a train station."),
-        Zone("hajin", "Chang-san Air Base", 1.6f, 5.55f, 0.9f, Threat.CRITICAL, "North Korea. The bunker is Extreme."),
-        Zone("hajin", "Underground Silo Complex", 0.5f, 6.15f, 0.33f, Threat.NONE, ""),
-        Zone("hajin", "Deadtown", 1.6f, 7.4f, 0.55f, Threat.LOW, "North Korea. Re-Education Center is Medium. Sewers below."),
-        Zone("hajin", "Imjin Farmland", 3.5f, 8.0f, 0.8f, Threat.LOW, "Rice Mill is Medium."),
-        Zone("hajin", "NuriGO Mall", 7.3f, 5.55f, 0.55f, Threat.HIGH, "West is High, East is Medium. Tunnels underneath."),
-        Zone("hajin", "The Grid", 6.5f, 6.22f, 0.55f, Threat.CRITICAL, "Downtown Hajin City. Netshin Tech Complex is Extreme."),
-        Zone("hajin", "Construction Zone", 7.35f, 7.05f, 0.3f, Threat.CRITICAL, "Part of The Grid."),
-        Zone("hajin", "Hotel Lucera", 7.75f, 7.55f, 0.22f, Threat.NONE, ""),
-        Zone("hajin", "Cheonwang Peak Array", 5.3f, 7.05f, 0.4f, Threat.MEDIUM, "Summit array. Helipad on the roof."),
-        Zone("hajin", "Wolves Stadium", 5.95f, 7.55f, 0.38f, Threat.MEDIUM, "Police station and bank nearby."),
-        Zone("hajin", "Hajin River Heights", 6.6f, 7.6f, 0.35f, Threat.MEDIUM, "Compound Echo, Gangbyeon apartments."),
-        Zone("hajin", "Songdo Wharf", 8.5f, 7.1f, 0.55f, Threat.LOW, "East coast."),
+    private fun gridAt(px: Float, py: Float): String {
+        val c = DmzOfficial.gx(px).toInt().coerceIn(0, 9)
+        val r = DmzOfficial.gy(py).toInt().coerceIn(0, 9)
+        return "${'A' + c}$r"
+    }
+
+    private fun nearestLabel(px: Float, py: Float): String =
+        DmzOfficial.labels.minByOrNull { (it.x - px) * (it.x - px) + (it.y - py) * (it.y - py) }?.name ?: "Hajin"
+
+    private val threats = mapOf(
+        "14th Political Prison" to Threat.HIGH, "Chang-san Air Base" to Threat.CRITICAL, "Deadtown" to Threat.LOW,
+        "Imjin Farmland" to Threat.LOW, "Cheongun Village" to Threat.LOW, "Haneul Nuclear Reactor" to Threat.HIGH,
+        "Mirae General Hospital" to Threat.LOW, "NuriGo Mall" to Threat.HIGH, "Cheonwang Peak Array" to Threat.MEDIUM,
+        "The Grid" to Threat.CRITICAL, "Songdo Wharf" to Threat.LOW, "Wolves Stadium" to Threat.MEDIUM, "Hajin River Heights" to Threat.MEDIUM,
+        "Construction Zone" to Threat.CRITICAL, "DBN Headquarters" to Threat.CRITICAL, "Hanex Bank" to Threat.CRITICAL,
+        "NuriGO West" to Threat.HIGH, "NuriGO East" to Threat.MEDIUM, "South Island" to Threat.MEDIUM,
     )
+    private val notes = mapOf(
+        "14th Political Prison" to "North Korea. The Citadel is Critical.",
+        "Chang-san Air Base" to "North Korea. The bunker is Extreme.",
+        "Deadtown" to "North Korea. Re-Education Center is Medium. Sewers below.",
+        "Imjin Farmland" to "Rice Mill is Medium.",
+        "Cheongun Village" to "Heavenly Luck Casino is High. Russian border crossing to the north.",
+        "Haneul Nuclear Reactor" to "Radiation: bring protection and a gas mask. Border Zone is Medium.",
+        "Mirae General Hospital" to "Beside a train station.",
+        "NuriGo Mall" to "West is High, East is Medium. Tunnels underneath.",
+        "Cheonwang Peak Array" to "Summit array. Helipad on the roof.",
+        "The Grid" to "Downtown Hajin City. Netshin Tech Complex is Extreme.",
+        "Songdo Wharf" to "East coast.",
+        "Wolves Stadium" to "Police station and bank nearby.",
+        "Hajin River Heights" to "Compound Echo, Gangbyeon apartments.",
+    )
+
+    /** Hajin's named places, exactly where the official tac map labels them. */
+    val zones: List<Zone> = DmzOfficial.labels.map { l ->
+        Zone(
+            "hajin", l.name, DmzOfficial.gx(l.x), DmzOfficial.gy(l.y), if (l.major) 0.35f else 0.25f,
+            threats[l.name] ?: Threat.NONE, notes[l.name] ?: "", label = true, major = l.major,
+        )
+    }
 
     /** Everything searchable on a map, plus zones as searchable places. */
     data class Hit(val spot: Spot?, val zone: Zone?) {

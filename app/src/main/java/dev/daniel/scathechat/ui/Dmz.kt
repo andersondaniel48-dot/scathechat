@@ -143,13 +143,20 @@ private fun kindColor(s: Dmz.Spot) = when (s.kind) {
     Dmz.Kind.EXFIL -> Color(0xFF8CFF6A)
     Dmz.Kind.BOSS -> Color(0xFFFF3B3B)
     Dmz.Kind.ENTRY -> Color(0xFFFFB23F)
+    Dmz.Kind.CLINIC -> Color(0xFF8CFF6A)
+    Dmz.Kind.GAS -> Color(0xFFFFD27A)
+    Dmz.Kind.CACHE -> Color(0xFFD9CBBE)
+    Dmz.Kind.TOWER -> Color(0xFFB48CFF)
+    Dmz.Kind.COMPOUND -> Color(0xFFFF7AA8)
+    Dmz.Kind.STRONGHOLD -> Color(0xFFFF5A1F)
     else -> Color(0xFFF2E6D8)
 }
 
 private fun glyph(k: Dmz.Kind) = when (k) {
     Dmz.Kind.KEY -> "K"; Dmz.Kind.POLICE -> "P"; Dmz.Kind.FIRE -> "F"; Dmz.Kind.BANK -> "$"
     Dmz.Kind.MARKET -> "B"; Dmz.Kind.EXFIL -> "E"; Dmz.Kind.BOSS -> "!"; Dmz.Kind.STATION -> "S"
-    Dmz.Kind.ENTRY -> "X"; else -> "•"
+    Dmz.Kind.ENTRY -> "X"; Dmz.Kind.CLINIC -> "+"; Dmz.Kind.GAS -> "G"; Dmz.Kind.CACHE -> "A"
+    Dmz.Kind.TOWER -> "T"; Dmz.Kind.COMPOUND -> "C"; Dmz.Kind.STRONGHOLD -> "■"; else -> "•"
 }
 
 private fun threatColor(t: Dmz.Threat) = when (t) {
@@ -169,19 +176,100 @@ private fun pinColor(kind: String) = when (kind) {
 
 // ---------------------------------------------------------------- layout of markers
 
-private enum class Layer(val label: String) { KEYS("Key rooms"), PLACES("Places"), EXITS("Exfils & bosses"), PINS("Group pins") }
+private enum class Layer(val label: String) {
+    KEYS("Key rooms"), PLACES("Places"), SUPPLY("Caches & gas"), EXITS("Exfils & bosses"), PINS("Group pins")
+}
 
 private fun layerOf(k: Dmz.Kind) = when (k) {
     Dmz.Kind.KEY -> Layer.KEYS
     Dmz.Kind.EXFIL, Dmz.Kind.BOSS -> Layer.EXITS
+    Dmz.Kind.CACHE, Dmz.Kind.GAS -> Layer.SUPPLY
     else -> Layer.PLACES
+}
+
+/** Official-map pixels to our world units. */
+private fun officialAt(px: Float, py: Float) = Offset(dev.daniel.scathechat.data.DmzOfficial.gx(px) * CELL, dev.daniel.scathechat.data.DmzOfficial.gy(py) * CELL)
+
+// ---------------------------------------------------------------- official map tiles
+
+/** Activision's map tiles, fetched by this phone, kept on disk and in memory. */
+private object Tiles {
+    private val mem = android.util.LruCache<String, ImageBitmap>(140)
+    private val pending = java.util.Collections.synchronizedSet(HashSet<String>())
+    val version = androidx.compose.runtime.mutableIntStateOf(0)
+
+    fun get(ctx: Context, z: Int, x: Int, y: Int): ImageBitmap? {
+        val key = "$z/$x/$y"
+        mem.get(key)?.let { return it }
+        if (!pending.add(key)) return null
+        Repo.scope.launch(Dispatchers.IO) {
+            try {
+                val f = File(ctx.filesDir, "dmz_tiles/hajin_v1/${z}_${x}_${y}.png")
+                if (!f.exists()) {
+                    f.parentFile?.mkdirs()
+                    val url = dev.daniel.scathechat.data.DmzOfficial.TILES.replace("{z}", "$z").replace("{x}", "$x").replace("{y}", "$y")
+                    val req = okhttp3.Request.Builder().url(url)
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Mobile Safari/537.36")
+                        .header("Referer", "https://www.callofduty.com/").build()
+                    Repo.http.newCall(req).execute().use { r -> if (r.isSuccessful) r.body?.bytes()?.let { f.writeBytes(it) } }
+                }
+                if (f.exists()) BitmapFactory.decodeFile(f.path)?.asImageBitmap()?.let { mem.put(key, it) }
+            } catch (_: Exception) {
+            } finally {
+                pending.remove(key)
+                version.intValue++
+            }
+        }
+        return null
+    }
+}
+
+private fun DrawScope.drawTiles(ctx: Context, cam: Cam) {
+    val O = dev.daniel.scathechat.data.DmzOfficial
+    val sppx = cam.scale * CELL / O.CELL // screen px per map px
+    val need = 1f / sppx // map px per screen px
+    val zDetail = (O.MAX_Z - kotlin.math.floor(kotlin.math.log2(max(need * 1.4f, 1f)).toDouble()).toInt()).coerceIn(2, O.MAX_Z)
+    fun layer(z: Int) {
+        val n = 1 shl z
+        val ts = O.SIZE / n
+        val w0 = cam.toWorld(Offset.Zero); val w1 = cam.toWorld(Offset(size.width, size.height))
+        val mx0 = O.X0 + w0.x / CELL * O.CELL; val my0 = O.Y0 + w0.y / CELL * O.CELL
+        val mx1 = O.X0 + w1.x / CELL * O.CELL; val my1 = O.Y0 + w1.y / CELL * O.CELL
+        val x0 = (mx0 / ts).toInt().coerceIn(0, n - 1); val x1 = (mx1 / ts).toInt().coerceIn(0, n - 1)
+        val y0 = (my0 / ts).toInt().coerceIn(0, n - 1); val y1 = (my1 / ts).toInt().coerceIn(0, n - 1)
+        for (ty in y0..y1) for (tx in x0..x1) {
+            val img = Tiles.get(ctx, z, tx, ty) ?: continue
+            val a = cam.toScreen(officialAt(tx * ts, ty * ts))
+            val b = cam.toScreen(officialAt((tx + 1) * ts, (ty + 1) * ts))
+            drawImage(
+                img, srcOffset = IntOffset.Zero, srcSize = IntSize(img.width, img.height),
+                dstOffset = IntOffset(a.x.toInt(), a.y.toInt()),
+                dstSize = IntSize((b.x - a.x).toInt() + 1, (b.y - a.y).toInt() + 1),
+            )
+        }
+    }
+    layer(2) // quick, low-detail underlay
+    if (zDetail > 2) layer(zDetail)
 }
 
 private data class Placed(val spot: Dmz.Spot, val at: Offset)
 
 /** Spots sharing a grid square fan out in a ring so each can be tapped. Areas sit in the middle of their square. */
-private fun place(map: Dmz.MapDef, spots: List<Dmz.Spot>): List<Placed> {
+private fun place(map: Dmz.MapDef, all: List<Dmz.Spot>): List<Placed> {
     val out = ArrayList<Placed>()
+    // exact positions: several rooms in one building fan out in a small ring around it
+    all.filter { it.px != null && it.py != null }.groupBy { (it.px!! / 6).toInt() to (it.py!! / 6).toInt() }.values.forEach { list ->
+        val at = officialAt(list[0].px!!, list[0].py!!)
+        if (list.size == 1) out.add(Placed(list[0], at))
+        else {
+            val rad = (0.05f + 0.012f * list.size).coerceAtMost(0.13f) * CELL
+            list.forEachIndexed { i, sp ->
+                val a = (i * 2 * PI / list.size - PI / 2).toFloat()
+                out.add(Placed(sp, at + Offset(cos(a) * rad, sin(a) * rad)))
+            }
+        }
+    }
+    val spots = all.filter { it.px == null || it.py == null }
     val zones = Dmz.zones.filter { it.map == map.id }
     // Group by square, and within a square by the location they belong to, so a prison's rooms sit by the prison.
     spots.filter { it.kind != Dmz.Kind.AREA }.groupBy { it.grid }.forEach { (grid, inCell) ->
@@ -351,7 +439,8 @@ private sealed interface Sel {
  * plus pins the group drops for each other (synced, encrypted).
  */
 @Composable
-private fun DmzOwnMap(onClose: () -> Unit) {
+fun DmzScreen(onClose: () -> Unit) {
+    BackHandler(onBack = onClose)
     val ctx = LocalContext.current
     val density = LocalDensity.current
     val focus = LocalFocusManager.current
@@ -365,7 +454,7 @@ private fun DmzOwnMap(onClose: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var sel by remember { mutableStateOf<Sel?>(null) }
-    var layers by remember { mutableStateOf(Layer.entries.toSet()) }
+    var layers by remember { mutableStateOf(Layer.entries.toSet() - Layer.SUPPLY) }
     var newPinAt by remember { mutableStateOf<Offset?>(null) }
     var imageSheet by remember { mutableStateOf(false) }
     var aligning by remember { mutableStateOf(false) }
@@ -380,7 +469,7 @@ private fun DmzOwnMap(onClose: () -> Unit) {
 
     val cam = remember { Cam() }
     val anim = remember { Animatable(0f) }
-    val topPad = with(density) { 165.dp.toPx() }
+    val topPad = with(density) { 190.dp.toPx() }
     val bottomPad = with(density) { 40.dp.toPx() }
 
     val bitmap by produceState<ImageBitmap?>(null, mapId, imgVersion) {
@@ -434,7 +523,7 @@ private fun DmzOwnMap(onClose: () -> Unit) {
     // first time on a map with no background and nothing shared yet: just do it
     LaunchedEffect(mapId) {
         val prefs = ctx.getSharedPreferences("dmz", 0)
-        if (sharedMap(mapId) == null && srcOf(ctx, mapId) != "local" && !prefs.getBoolean("auto${ALIGN_V}_$mapId", false)) {
+        if (map.sources.isNotEmpty() && sharedMap(mapId) == null && srcOf(ctx, mapId) != "local" && !prefs.getBoolean("auto${ALIGN_V}_$mapId", false)) {
             prefs.edit().putBoolean("auto${ALIGN_V}_$mapId", true).apply()
             runSetup(map)
         }
@@ -581,20 +670,23 @@ private fun DmzOwnMap(onClose: () -> Unit) {
                 },
         ) {
             if (!cam.ready) return@Canvas
+            Tiles.version.intValue // redraw as tiles arrive
             drawMap(
                 map = map, cam = cam, bitmap = bitmap, cal = cal, zones = zones, areas = areas, placed = placed,
                 pins = mapPins, layers = layers, sel = sel, pulse = pulse.value, measurer = measurer,
-                memberColor = { id -> C.member(members[id]?.color ?: 0) },
+                memberColor = { id -> C.member(members[id]?.color ?: 0) }, ctx = ctx,
             )
         }
 
         // ------------------------------------------------------------ header, search, layers
-        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
+        Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp)) {
             Row(
                 Modifier.fillMaxWidth().height(58.dp).glass(RoundedCornerShape(22.dp), fill = Color(0xCC140A06)).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Spacer(Modifier.width(8.dp))
+                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to chat", tint = C.Bone) }
+                Text("DMZ", style = fireText(22.sp, glow = 0.6f))
+                Spacer(Modifier.width(10.dp))
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Dmz.maps.forEach { m ->
                         val on = m.id == mapId
@@ -608,7 +700,7 @@ private fun DmzOwnMap(onClose: () -> Unit) {
                         )
                     }
                 }
-                IconButton(onClick = { imageSheet = true }) { Icon(Icons.Filled.Image, "Map background", tint = C.Bone) }
+                if (!map.tiled) IconButton(onClick = { imageSheet = true }) { Icon(Icons.Filled.Image, "Map background", tint = C.Bone) }
             }
             Spacer(Modifier.height(8.dp))
             Row(
@@ -761,7 +853,7 @@ private fun DmzOwnMap(onClose: () -> Unit) {
 private fun DrawScope.drawMap(
     map: Dmz.MapDef, cam: Cam, bitmap: ImageBitmap?, cal: FloatArray?, zones: List<Dmz.Zone>, areas: List<Dmz.Spot>,
     placed: List<Placed>, pins: List<DmzPin>, layers: Set<Layer>, sel: Sel?, pulse: Float,
-    measurer: androidx.compose.ui.text.TextMeasurer, memberColor: (String) -> Color,
+    measurer: androidx.compose.ui.text.TextMeasurer, memberColor: (String) -> Color, ctx: Context,
 ) {
     val W = map.cols * CELL
     val H = map.rows * CELL
@@ -781,19 +873,15 @@ private fun DrawScope.drawMap(
         val a = cam.toScreen(Offset(x0, y0))
         val b = cam.toScreen(Offset(x1, y1))
         drawImage(bitmap, dstOffset = IntOffset(a.x.toInt(), a.y.toInt()), dstSize = IntSize((b.x - a.x).toInt(), (b.y - a.y).toInt()), alpha = 0.92f)
-    } else if (map.id == "hajin") {
-        // schematic: which side of the border you're on
-        val big = TextStyle(color = Color(0x1FF5EADF), fontSize = (cellPx / dp * 0.34f).coerceIn(10f, 60f).sp, fontFamily = Display)
-        drawLabel(measurer, "NORTH KOREA", cam.toScreen(Offset(1.5f * CELL, 8.4f * CELL)), big)
-        drawLabel(measurer, "SOUTH KOREA", cam.toScreen(Offset(6.5f * CELL, 8.4f * CELL)), big)
-        drawLabel(measurer, "RUSSIAN BORDER", cam.toScreen(Offset(5f * CELL, 0.35f * CELL)), big)
+    } else if (map.tiled) {
+        drawTiles(ctx, cam)
     } else {
         val big = TextStyle(color = Color(0x1FF5EADF), fontSize = (cellPx / dp * 0.34f).coerceIn(10f, 60f).sp, fontFamily = Display)
         drawLabel(measurer, if (map.id == "x01_lower") "LOWER FLOOR" else "UPPER FLOOR", cam.toScreen(Offset(5f * CELL, 8.5f * CELL)), big)
     }
 
     // grid
-    val gridColor = Color(0x33F5EADF)
+    val gridColor = if (map.tiled) Color(0x40FFFFFF) else Color(0x33F5EADF)
     for (c in 0..map.cols) {
         val x = cam.toScreen(Offset(c * CELL, 0f)).x
         drawLine(gridColor, Offset(x, tl.y), Offset(x, br.y), strokeWidth = 1f)
@@ -818,7 +906,19 @@ private fun DrawScope.drawMap(
     // zones (named locations), coloured by threat
     val zoneText = TextStyle(color = C.Bone, fontSize = 13.sp, fontFamily = Display)
     val selZone = (sel as? Sel.ZoneSel)?.zone
-    for (z in zones) {
+    val minorText = TextStyle(color = Color(0xFFE8DDD2), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+    // official-style labels: big names always, smaller place names once zoomed in
+    for (z in zones.filter { it.label }.sortedByDescending { it.major }) {
+        if (!z.major && cellPx < 170 * dp) continue
+        val c = cam.toScreen(Offset(z.cx * CELL, z.cy * CELL))
+        if (z == selZone) drawCircle(C.Ember, 18 * dp, c, style = Stroke(3 * dp))
+        val drawn = drawLabel(measurer, z.name, c, if (z.major) zoneText else minorText, halo = true, taken = taken, maxWidth = (160 * dp).toInt())
+        if (drawn && z.major && z.threat != Dmz.Threat.NONE) {
+            val lay = measurer.measure(z.name, zoneText, constraints = androidx.compose.ui.unit.Constraints(maxWidth = (160 * dp).toInt()), maxLines = 2)
+            drawCircle(threatColor(z.threat), 4.5f * dp, c - Offset(lay.size.width / 2f + 10 * dp, 0f))
+        }
+    }
+    for (z in zones.filter { !it.label }) {
         val c = cam.toScreen(Offset(z.cx * CELL, z.cy * CELL))
         val r = z.r * cellPx
         val col = threatColor(z.threat)
@@ -1187,212 +1287,3 @@ private fun LinkDialog(onDismiss: () -> Unit, onGo: (String) -> Unit) {
 }
 
 
-// ================================================================ live interactive maps
-
-private data class WebMapSource(val id: String, val label: String, val url: String, val note: String)
-
-private val WEB_MAPS = listOf(
-    WebMapSource("codcentral", "COD Central", "https://codcentral.net/blog/mw4-dmz-map/", "Hajin and both X01 floors, keys, Lieutenants, towers"),
-    WebMapSource("official", "Official", "https://www.callofduty.com/guides/modernwarfare4/dmz-maps/hajin", "Activision's own Hajin tac map"),
-    WebMapSource("radar", "DMZ Radar", "https://dmzradar.com/map.html", "Hajin key rooms, exfils, spawns, caches"),
-    WebMapSource("x01", "X01", "https://dmzmap.com/x01/map", "Both X01 floors with keycard rooms and exits"),
-)
-
-/** Type [q] into the page's own search box (whatever map site it is), then pick the first matching result. */
-private fun webSearch(wv: android.webkit.WebView, q: String, onResult: (Boolean) -> Unit) {
-    val js = """
-        (function(q){
-          var vis = function(e){ var r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-          var ins = Array.prototype.slice.call(document.querySelectorAll('input')).filter(function(i){
-            var t = ((i.placeholder||'') + ' ' + (i.type||'') + ' ' + (i.name||'') + ' ' + (i.getAttribute('aria-label')||'') + ' ' + (i.id||'')).toLowerCase();
-            return vis(i) && /search|find|filter|marker|key|location/.test(t);
-          });
-          if (!ins.length) ins = Array.prototype.slice.call(document.querySelectorAll('input[type=text],input:not([type])')).filter(vis);
-          var el = ins[0];
-          if (!el) return 'none';
-          el.scrollIntoView({block:'center'});
-          el.focus();
-          var set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          set.call(el, q);
-          el.dispatchEvent(new Event('input', {bubbles:true}));
-          el.dispatchEvent(new Event('change', {bubbles:true}));
-          ['keydown','keypress','keyup'].forEach(function(t){ el.dispatchEvent(new KeyboardEvent(t, {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true})); });
-          setTimeout(function(){
-            var lq = q.toLowerCase();
-            var c = Array.prototype.slice.call(document.querySelectorAll('li,button,a,[role=option],[role=button],div,span')).filter(function(e){
-              if (e === el || !vis(e) || e.children.length > 6) return false;
-              var t = (e.textContent||'').trim().toLowerCase();
-              return t.indexOf(lq) === 0 && t.length < lq.length + 80;
-            });
-            c.sort(function(a,b){ return (a.textContent||'').length - (b.textContent||'').length; });
-            if (c[0]) { c[0].click(); el.blur(); }
-          }, 700);
-          return 'ok';
-        })(${org.json.JSONObject.quote(q)});
-    """.trimIndent()
-    wv.evaluateJavascript(js) { r -> onResult(r?.contains("ok") == true) }
-}
-
-@android.annotation.SuppressLint("SetJavaScriptEnabled")
-private fun makeWebView(ctx: Context, url: String, onProgress: (Int) -> Unit): android.webkit.WebView =
-    android.webkit.WebView(ctx).apply {
-        setBackgroundColor(0xFF0B0705.toInt())
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.loadWithOverviewMode = true
-        settings.useWideViewPort = true
-        settings.setSupportZoom(true)
-        settings.builtInZoomControls = true
-        settings.displayZoomControls = false
-        settings.mediaPlaybackRequiresUserGesture = true
-        webViewClient = object : android.webkit.WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: android.webkit.WebView, request: android.webkit.WebResourceRequest): Boolean {
-                val scheme = request.url.scheme ?: return true
-                return scheme != "http" && scheme != "https" // keep map links inside; ignore app-store / intent links
-            }
-        }
-        webChromeClient = object : android.webkit.WebChromeClient() {
-            override fun onProgressChanged(view: android.webkit.WebView, newProgress: Int) = onProgress(newProgress)
-        }
-        loadUrl(url)
-    }
-
-/**
- * DMZ mode: the best live interactive maps (pins on the actual buildings, sharp zoom), with our search,
- * door descriptions and Send to chat on top, plus our own map for the group's pins.
- */
-@Composable
-fun DmzScreen(onClose: () -> Unit) {
-    val ctx = LocalContext.current
-    val prefs = remember { ctx.getSharedPreferences("dmz", 0) }
-    var source by rememberSaveable { mutableStateOf(prefs.getString("web_src", WEB_MAPS.first().id) ?: WEB_MAPS.first().id) }
-    val webViews = remember { HashMap<String, android.webkit.WebView>() }
-    var progress by remember { mutableIntStateOf(100) }
-    val focus = LocalFocusManager.current
-    var capturing by remember { mutableStateOf(false) }
-    if (capturing) { DmzCaptureScreen(onDone = { capturing = false }); return }
-
-    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { webViews.values.forEach { it.destroy() }; webViews.clear() } }
-    BackHandler {
-        val wv = webViews[source]
-        if (source != "pins" && wv?.canGoBack() == true) wv.goBack() else onClose()
-    }
-
-    Column(Modifier.fillMaxSize().background(Color(0xFF0B0705))) {
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(start = 10.dp, end = 10.dp, top = 6.dp)
-                .height(56.dp).glass(RoundedCornerShape(22.dp), fill = Color(0xCC140A06)).padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to chat", tint = C.Bone) }
-            Text("DMZ", style = fireText(22.sp, glow = 0.6f))
-            Spacer(Modifier.width(10.dp))
-            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    "Send map data", color = C.Flame, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.glass(RoundedCornerShape(14.dp), fill = Color(0x30FF5A1F), rim = 0.6f)
-                        .clickable { capturing = true }.padding(horizontal = 12.dp, vertical = 7.dp),
-                )
-                (WEB_MAPS.map { it.id to it.label } + ("pins" to "Group pins")).forEach { (id, label) ->
-                    val on = id == source
-                    val shape = RoundedCornerShape(14.dp)
-                    Text(
-                        label, color = if (on) Color.White else C.Smoke, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .then(if (on) Modifier.molten(shape) else Modifier.glass(shape, fill = Color(0x30140A06), rim = 0.5f))
-                            .clickable { if (!on) { focus.clearFocus(); source = id; prefs.edit().putString("web_src", id).apply() } }
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
-                    )
-                }
-            }
-        }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (source == "pins") DmzOwnMap(onClose)
-            else {
-                val src = WEB_MAPS.first { it.id == source }
-                androidx.compose.runtime.key(src.id) {
-                    androidx.compose.ui.viewinterop.AndroidView(
-                        factory = { c ->
-                            val wv = webViews.getOrPut(src.id) { makeWebView(c, src.url) { progress = it } }
-                            (wv.parent as? android.view.ViewGroup)?.removeView(wv)
-                            wv
-                        },
-                        modifier = Modifier.fillMaxSize().padding(top = 64.dp),
-                    )
-                }
-                if (progress < 100) androidx.compose.material3.LinearProgressIndicator(
-                    progress = { progress / 100f }, color = C.Ember, trackColor = Color.Transparent,
-                    modifier = Modifier.fillMaxWidth().padding(top = 64.dp).height(2.dp),
-                )
-                WebSearchOverlay(src, webViews[src.id])
-            }
-        }
-    }
-}
-
-/** Our search (every key room and place, with door descriptions) driving the live map's own search. */
-@Composable
-private fun WebSearchOverlay(src: WebMapSource, wv: android.webkit.WebView?) {
-    val focus = LocalFocusManager.current
-    val members by Repo.members.collectAsState()
-    val me by Repo.me.collectAsState()
-    var query by rememberSaveable { mutableStateOf("") }
-    var searching by remember { mutableStateOf(false) }
-    var sel by remember { mutableStateOf<Sel?>(null) }
-    var note by remember { mutableStateOf<String?>(null) }
-    val results = remember(query) { Dmz.search(query) }
-
-    fun pick(hit: Dmz.Hit) {
-        focus.clearFocus(); searching = false
-        sel = if (hit.spot != null) Sel.SpotSel(hit.spot) else Sel.ZoneSel(hit.zone!!)
-        note = null
-        val q = hit.name
-        wv?.let { webSearch(it, q) { ok -> if (!ok) note = "${src.label} has no search box here; the card says where it is." } }
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
-            Row(
-                Modifier.fillMaxWidth().height(50.dp).glass(RoundedCornerShape(18.dp), fill = Color(0xEE140A06)).padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.Search, null, tint = C.Smoke, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(10.dp))
-                Box(Modifier.weight(1f)) {
-                    if (query.isEmpty()) Text("Find a key room or place on ${src.label}…", color = C.Faint, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    BasicTextField(
-                        value = query, onValueChange = { query = it; searching = true }, singleLine = true,
-                        textStyle = TextStyle(color = C.Bone, fontSize = 15.sp), cursorBrush = SolidColor(C.Ember),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { results.firstOrNull()?.let { pick(it) } }),
-                        modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) searching = true },
-                    )
-                }
-                if (query.isNotEmpty()) IconButton(onClick = { query = ""; searching = false; sel = null; focus.clearFocus() }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.Close, "Clear search", tint = C.Smoke)
-                }
-            }
-            if (searching && query.isNotBlank()) {
-                Spacer(Modifier.height(6.dp))
-                Box(Modifier.fillMaxWidth().heightIn(max = 360.dp).glass(RoundedCornerShape(18.dp), fill = Color(0xF2140A06))) {
-                    if (results.isEmpty()) Text("Nothing matches \"$query\".", color = C.Smoke, fontSize = 14.sp, modifier = Modifier.padding(16.dp))
-                    else LazyColumn(Modifier.padding(vertical = 6.dp)) { items(results) { hit -> ResultRow(hit) { pick(hit) } } }
-                }
-            }
-        }
-        Spacer(Modifier.weight(1f))
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(10.dp)) {
-            note?.let {
-                Text(
-                    it, color = C.Smoke, fontSize = 12.sp,
-                    modifier = Modifier.glass(RoundedCornerShape(14.dp), fill = Color(0xEE140A06)).clickable { note = null }.padding(horizontal = 12.dp, vertical = 8.dp),
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-            sel?.let { s ->
-                val mapOf = when (s) { is Sel.SpotSel -> Dmz.map(s.spot.map); is Sel.ZoneSel -> Dmz.map(s.zone.map); is Sel.PinSel -> Dmz.map(s.pin.map) }
-                DetailCard(s, mapOf, members.mapValues { it.value.name }, me?.id, onClose = { sel = null }, onDeletePin = {})
-            }
-        }
-    }
-}
