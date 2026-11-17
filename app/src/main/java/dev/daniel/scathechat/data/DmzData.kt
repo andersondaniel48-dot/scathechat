@@ -15,13 +15,16 @@ object Dmz {
     enum class Threat(val label: String) { LOW("Low"), MEDIUM("Medium"), HIGH("High"), CRITICAL("Critical"), EXTREME("Extreme"), NONE("") }
 
     /** [sources]: map images (with the tac-map grid drawn on) that each phone downloads for itself. */
-    data class MapDef(val id: String, val title: String, val short: String, val cols: Int, val rows: Int, val rowStart: Int, val sources: List<String>)
+    data class MapDef(
+        val id: String, val title: String, val short: String, val cols: Int, val rows: Int, val rowStart: Int,
+        val sources: List<String>, val hires: String? = null,
+    )
 
     val maps = listOf(
         MapDef("hajin", "Hajin", "Hajin", 10, 9, 1, listOf(
             "https://codcentral.net/assets/library/mw4/dmz/map/hajin-map-1440.webp",
             "https://codmunity.gg/dmz/hajin-map-cod2-1120.webp",
-        )),
+        ), hires = "https://mw4meta.com/images/tacmap/hajin-map-2048.webp"),
         MapDef("x01_lower", "X01 · Lower floor (Deep Vault)", "X01 Lower", 10, 9, 0, listOf(
             "https://codcentral.net/assets/library/mw4/dmz/map/x01-floor-1-v4.webp",
         )),

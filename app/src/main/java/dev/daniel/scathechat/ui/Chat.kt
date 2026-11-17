@@ -672,7 +672,6 @@ private fun TopBar(
                 .clickable(onClick = onMembers)
                 .padding(horizontal = 4.dp)
         ) {
-            Text(title, color = C.Bone, fontFamily = Display, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!subtitleAlert && subtitle.endsWith("online")) {
                     Box(Modifier.size(7.dp).clip(CircleShape).background(C.Online))
@@ -681,8 +680,8 @@ private fun TopBar(
                 val live = liveSubtitle()
                 Text(
                     if (subtitleAlert) subtitle else live ?: subtitle,
-                    color = if (subtitleAlert) Color(0xFFFFB4A0) else if (live != null) C.Flame else C.Smoke,
-                    fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (subtitleAlert) Color(0xFFFFB4A0) else if (live != null) C.Flame else C.Bone,
+                    fontSize = 14.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 )
             }
         }

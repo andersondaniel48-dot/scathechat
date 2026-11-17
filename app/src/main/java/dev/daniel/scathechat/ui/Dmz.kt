@@ -223,7 +223,10 @@ private fun srcOf(ctx: Context, map: String): String? = ctx.getSharedPreferences
 private fun saveSrc(ctx: Context, map: String, src: String?) = ctx.getSharedPreferences("dmz", 0).edit().putString("src_$map", src).apply()
 
 /** Downloads a map image straight onto this phone. Returns null on success, else what went wrong. */
-private fun download(ctx: Context, map: String, url: String): String? = try {
+private fun download(ctx: Context, map: String, url: String): String? =
+    downloadTo(url, imgFile(ctx, map)).also { if (it == null) saveSrc(ctx, map, url) }
+
+private fun downloadTo(url: String, dest: File): String? = try {
     val req = okhttp3.Request.Builder().url(url)
         .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Mobile Safari/537.36")
         .header("Accept", "image/avif,image/webp,image/*,*/*;q=0.8")
@@ -238,12 +241,52 @@ private fun download(ctx: Context, map: String, url: String): String? = try {
                 val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
                 if (o.outWidth <= 0) "That link isn't an image."
-                else { imgFile(ctx, map).writeBytes(bytes); saveSrc(ctx, map, url); null }
+                else { dest.writeBytes(bytes); null }
             }
         }
     }
 } catch (e: Exception) {
     e.message ?: "Download failed."
+}
+
+private sealed interface Setup {
+    data class Done(val url: String, val cal: FloatArray) : Setup
+    data object Manual : Setup
+    data class Failed(val why: String) : Setup
+}
+
+/**
+ * Gets the map and lines it up with no hands: download the gridded map, find its grid, then (for Hajin)
+ * download the sharper official map and carry the grid over to it.
+ */
+private fun autoSetup(ctx: Context, map: Dmz.MapDef): Setup {
+    val tmpGrid = File(ctx.cacheDir, "dmz_grid_${map.id}")
+    var gridUrl: String? = null
+    var lastErr = "no map source"
+    for (u in map.sources) {
+        val e = downloadTo(u, tmpGrid)
+        if (e == null) { gridUrl = u; break } else lastErr = e
+    }
+    gridUrl ?: return Setup.Failed(lastErr)
+    val g = MapAlign.decode(tmpGrid, 2400) ?: return Setup.Failed("couldn't read the image")
+    val cal = MapAlign.detectGrid(g, map.cols, map.rows)
+    if (cal == null) {
+        tmpGrid.copyTo(imgFile(ctx, map.id), overwrite = true); saveSrc(ctx, map.id, gridUrl); saveCal(ctx, map.id, null)
+        return Setup.Manual
+    }
+    map.hires?.let { hu ->
+        val tmpHi = File(ctx.cacheDir, "dmz_hi_${map.id}")
+        if (downloadTo(hu, tmpHi) == null) {
+            val h = MapAlign.decode(tmpHi, 2400)
+            val hc = h?.let { MapAlign.register(it, g, cal, map.cols, map.rows) }
+            if (hc != null) {
+                tmpHi.copyTo(imgFile(ctx, map.id), overwrite = true); saveSrc(ctx, map.id, hu); saveCal(ctx, map.id, hc)
+                return Setup.Done(hu, hc)
+            }
+        }
+    }
+    tmpGrid.copyTo(imgFile(ctx, map.id), overwrite = true); saveSrc(ctx, map.id, gridUrl); saveCal(ctx, map.id, cal)
+    return Setup.Done(gridUrl, cal)
 }
 
 /** The group's shared backgrounds: one person lines up the grid, everyone gets it. */
@@ -315,6 +358,23 @@ fun DmzScreen(onClose: () -> Unit) {
     }
     val cal = remember(mapId, imgVersion) { calOf(ctx, mapId) }
 
+    /** After a new image: find its grid automatically; only ask for a hand line-up if that fails. */
+    fun autoAlignOrAsk(url: String?) {
+        val target = mapId
+        val m = map
+        scope.launch {
+            working = "Lining up the grid…"
+            val cal = withContext(Dispatchers.Default) {
+                MapAlign.decode(imgFile(ctx, target), 2400)?.let { MapAlign.detectGrid(it, m.cols, m.rows) }
+            }
+            working = null
+            saveCal(ctx, target, cal)
+            imgVersion++
+            if (cal != null) { if (url != null) shareMap(target, url, cal) }
+            else { dlError = "Couldn't find the grid on that image automatically, so line it up by hand once."; aligning = true }
+        }
+    }
+
     fun fetch(url: String, then: (Boolean) -> Unit = {}) {
         val target = mapId
         downloading = true
@@ -324,6 +384,30 @@ fun DmzScreen(onClose: () -> Unit) {
             downloading = false
             if (err == null) imgVersion++ else dlError = err
             then(err == null)
+        }
+    }
+
+    var working by remember { mutableStateOf<String?>(null) }
+    fun runSetup(m: Dmz.MapDef) {
+        if (working != null) return
+        working = "Getting the ${m.short} map and lining up the grid…"
+        dlError = null
+        scope.launch {
+            val r = withContext(Dispatchers.Default) { autoSetup(ctx, m) }
+            working = null
+            when (r) {
+                is Setup.Done -> { shareMap(m.id, r.url, r.cal); imgVersion++ }
+                Setup.Manual -> { imgVersion++; if (mapId == m.id) { dlError = "Couldn't find the grid on that image automatically, so line it up by hand once."; aligning = true } }
+                is Setup.Failed -> dlError = "Couldn't download the ${m.short} map (${r.why}). Screenshot your tac map in game, or paste a link to a map image."
+            }
+        }
+    }
+    // first time on a map with no background and nothing shared yet: just do it
+    LaunchedEffect(mapId) {
+        val prefs = ctx.getSharedPreferences("dmz", 0)
+        if (sharedMap(mapId) == null && !imgFile(ctx, mapId).exists() && !prefs.getBoolean("auto_$mapId", false)) {
+            prefs.edit().putBoolean("auto_$mapId", true).apply()
+            runSetup(map)
         }
     }
 
@@ -558,11 +642,26 @@ fun DmzScreen(onClose: () -> Unit) {
             }
             Spacer(Modifier.height(8.dp))
             when (val s = sel) {
-                null -> Text(
-                    "Pinch to zoom · double-tap to zoom in · long-press to drop a pin for the group",
-                    color = C.Smoke, fontSize = 12.sp,
-                    modifier = Modifier.glass(RoundedCornerShape(14.dp), fill = Color(0xCC140A06)).padding(horizontal = 12.dp, vertical = 8.dp),
-                )
+                null -> when {
+                    working != null -> Row(
+                        Modifier.glass(RoundedCornerShape(14.dp), fill = Color(0xCC140A06)).padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), color = C.Flame, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(working ?: "", color = C.Bone, fontSize = 13.sp)
+                    }
+                    dlError != null && !imageSheet -> Text(
+                        dlError ?: "", color = Color(0xFFFFB4A0), fontSize = 13.sp,
+                        modifier = Modifier.glass(RoundedCornerShape(14.dp), fill = Color(0xEE140A06)).clickable { dlError = null }
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                    )
+                    else -> Text(
+                        "Pinch to zoom · double-tap to zoom in · long-press to drop a pin for the group",
+                        color = C.Smoke, fontSize = 12.sp,
+                        modifier = Modifier.glass(RoundedCornerShape(14.dp), fill = Color(0xCC140A06)).padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
                 else -> DetailCard(
                     s, map, members.mapValues { it.value.name }, me?.id,
                     onClose = { sel = null },
@@ -592,28 +691,17 @@ fun DmzScreen(onClose: () -> Unit) {
     }
 
     if (imageSheet) MapImageSheet(
-        map = map, has = bitmap != null, downloading = downloading, error = dlError,
+        map = map, has = bitmap != null, downloading = downloading || working != null, error = dlError,
         shared = sharedMap(mapId) != null,
         onDismiss = { imageSheet = false },
-        onDownload = {
-            val urls = map.sources
-            fun attempt(i: Int) {
-                if (i >= urls.size) return
-                fetch(urls[i]) { ok ->
-                    if (ok) { saveCal(ctx, mapId, null); imageSheet = false; aligning = true }
-                    else if (i + 1 < urls.size) attempt(i + 1)
-                    else dlError = "Couldn't download the ${map.short} map ($dlError). Screenshot your tac map in game, or paste a link to a map image."
-                }
-            }
-            attempt(0)
-        },
+        onDownload = { imageSheet = false; runSetup(map) },
         onLink = { linkDialog = true },
         onPicked = { uri ->
             scope.launch {
                 val ok = withContext(Dispatchers.IO) {
                     runCatching { ctx.contentResolver.openInputStream(uri)?.use { i -> imgFile(ctx, mapId).outputStream().use { i.copyTo(it) } } != null }.getOrDefault(false)
                 }
-                if (ok) { saveSrc(ctx, mapId, "local"); saveCal(ctx, mapId, null); imgVersion++; imageSheet = false; aligning = true }
+                if (ok) { saveSrc(ctx, mapId, "local"); imgVersion++; imageSheet = false; autoAlignOrAsk(null) }
             }
         },
         onAlign = { imageSheet = false; aligning = true },
@@ -624,7 +712,7 @@ fun DmzScreen(onClose: () -> Unit) {
         onDismiss = { linkDialog = false },
         onGo = { url ->
             linkDialog = false
-            fetch(url) { ok -> if (ok) { saveCal(ctx, mapId, null); imageSheet = false; aligning = true } }
+            fetch(url) { ok -> if (ok) { imageSheet = false; autoAlignOrAsk(url) } }
         },
     )
 
