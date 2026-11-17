@@ -14,6 +14,7 @@ class ScatheApp : Application(), ImageLoaderFactory {
         super.onCreate()
         Notifier.createChannels(this)
         Repo.init(this)
+        dev.daniel.scathechat.net.Push.ensureInit(this)
         dev.daniel.scathechat.net.Updater.startAuto(this)
     }
 

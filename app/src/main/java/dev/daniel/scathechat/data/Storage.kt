@@ -56,6 +56,22 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("auto_update", true)
         set(v) = sp.edit().putBoolean("auto_update", v).apply()
 
+    var pins: String?
+        get() = sp.getString("pins", null)
+        set(v) = sp.edit().putString("pins", v).apply()
+
+    var fcmToken: String?
+        get() = sp.getString("fcm", null)
+        set(v) = sp.edit().putString("fcm", v).apply()
+
+    var pruned: Set<String>
+        get() = sp.getStringSet("pruned", emptySet()) ?: emptySet()
+        set(v) = sp.edit().putStringSet("pruned", v).apply()
+
+    var lastPrune: Long
+        get() = sp.getLong("last_prune", 0L)
+        set(v) = sp.edit().putLong("last_prune", v).apply()
+
     fun clear() = sp.edit().clear().apply()
 }
 

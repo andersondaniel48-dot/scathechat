@@ -68,6 +68,9 @@ data class Member(
     val platform: String? = null,
     val title: String? = null,
     val typing: Long = 0L, // server time of the last keystroke
+    val pub: String? = null, // public signing key
+    val keyChanged: Boolean = false,
+    val fcm: String? = null, // push token
 )
 
 enum class Conn { CONNECTING, ONLINE, OFFLINE, ERROR }
@@ -172,11 +175,14 @@ data class Msg(
     val emoji: String? = null,
     val event: EventInfo? = null,
     val votes: Map<Long, String>? = null, // for type "vote": slot start -> y / m / n
-    val data: String? = null, // JSON body for "cod" (match) and "codstats" (career snapshot)
+    val data: String? = null, // JSON body for calls, locations, killcams, group settings
+    val cts: Long = 0L, // time the sender created it (signed)
+    val sig: String? = null, // sender's signature over Identity.canon
     val status: Int = SENT,
 ) {
     fun toPayload(): JSONObject = JSONObject().apply {
-        put("v", 1); put("id", id); put("f", from); put("y", type); put("ts", ts)
+        put("v", 1); put("id", id); put("f", from); put("y", type); put("ts", if (cts > 0) cts else ts)
+        sig?.let { put("sg", it) }
         text?.let { put("x", it) }
         replyTo?.let { put("r", it) }
         target?.let { put("tg", it) }
@@ -226,6 +232,8 @@ data class Msg(
             emoji = if (o.has("e")) o.optString("e") else null,
             event = EventInfo.from(o.optJSONObject("ev")),
             data = o.str("cd"),
+            cts = o.optLong("ts"),
+            sig = o.str("sg"),
             votes = o.optJSONObject("vt")?.let { v ->
                 val out = HashMap<Long, String>()
                 v.keys().forEach { k -> k.toLongOrNull()?.let { out[it] = v.optString(k) } }

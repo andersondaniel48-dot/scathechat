@@ -40,6 +40,14 @@ class Rtdb(base: String, private val http: OkHttpClient, private val streamHttp:
 
     fun put(path: String, body: String): String = exec(Request.Builder().url(url(path)).put(body.toRequestBody(json)).build())
 
+    fun patch(path: String, body: String): String = exec(Request.Builder().url(url(path)).patch(body.toRequestBody(json)).build())
+
+    /** Children of [path] from [startKey] on (inclusive), ordered by key. */
+    fun since(path: String, startKey: String?): String {
+        val q = if (startKey != null) mapOf("orderBy" to "\"\$key\"", "startAt" to "\"$startKey\"") else emptyMap()
+        return exec(Request.Builder().url(url(path, q)).get().build())
+    }
+
     /** Appends a child with a server-generated, time-ordered key and returns that key. */
     fun post(path: String, body: String): String =
         JSONObject(exec(Request.Builder().url(url(path)).post(body.toRequestBody(json)).build())).getString("name")

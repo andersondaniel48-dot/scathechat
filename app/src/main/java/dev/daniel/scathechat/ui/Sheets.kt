@@ -159,6 +159,10 @@ fun MembersSheet(members: Map<String, Member>, myId: String, now: Long, onDismis
                     Column(Modifier.padding(start = 12.dp).weight(1f)) {
                         Text(m.name + if (m.id == myId) " (you)" else "", color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                         Text(if (m.id == myId) "this phone" else lastSeen(m, now), color = if (m.id != myId && isOnline(m, now)) C.Online else C.Dim, fontSize = 13.sp)
+                        when {
+                            m.keyChanged -> Text("⚠ Security key changed. New messages under this name may not really be from ${m.name}.", color = Color(0xFFFFB4A0), fontSize = 12.sp)
+                            m.pub != null -> Text("🔒 Messages signed by this phone", color = C.Faint, fontSize = 12.sp)
+                        }
                     }
                 }
             }
@@ -177,6 +181,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
     var bg by remember { mutableStateOf(Repo.prefs.background) }
     var confirmLeave by remember { mutableStateOf(false) }
     var codSetup by remember { mutableStateOf(false) }
+    var pushSetup by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.Bar, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
             Text("Settings", style = fireText(22.sp, glow = 0.5f))
@@ -189,6 +194,19 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 Repo.updateMe(name, color)
                 Toast.makeText(ctx, "Saved", Toast.LENGTH_SHORT).show()
             }, enabled = name.isNotBlank()) { Text("Save name & color") }
+
+            Spacer(Modifier.height(18.dp)); HorizontalDivider(color = C.Field); Spacer(Modifier.height(14.dp))
+            Text("Push notifications", color = C.Text, fontSize = 16.sp)
+            Text(
+                if (dev.daniel.scathechat.net.Push.configured()) "Set up for the group. Phones wake each other through Google; no message content is sent."
+                else "Optional: lets messages and calls get through even when Android puts the app to sleep.",
+                color = C.Dim, fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            GlassButton(onClick = { pushSetup = true }) { ButtonLabel("Push setup", 15) }
+
+            Spacer(Modifier.height(18.dp)); HorizontalDivider(color = C.Field); Spacer(Modifier.height(14.dp))
+            StorageSection()
 
             Spacer(Modifier.height(18.dp)); HorizontalDivider(color = C.Field); Spacer(Modifier.height(14.dp))
             Text("Calls", color = C.Text, fontSize = 16.sp)
@@ -250,6 +268,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
         }
     }
     if (codSetup) RelaySheet { codSetup = false }
+    if (pushSetup) PushSheet { pushSetup = false }
     if (confirmLeave) {
         AlertDialog(
             onDismissRequest = { confirmLeave = false },

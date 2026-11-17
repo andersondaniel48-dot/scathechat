@@ -192,7 +192,11 @@ fun MessageRow(
 
 @Composable
 private fun Meta(m: Msg, mine: Boolean, readByAll: Boolean, onDark: Boolean, modifier: Modifier = Modifier) {
+    val trust = remember(m.id, m.sig, m.key) { dev.daniel.scathechat.data.Identity.status(m) }
     Row(modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (trust == dev.daniel.scathechat.data.Identity.WARNING) {
+            Text("⚠ Not verified  ", color = Color(0xFFFFB4A0), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
         Text(timeOf(m.ts), color = if (mine && onDark) Color(0xCCFFFFFF) else C.Dim, fontSize = 11.sp)
         if (mine) {
             Spacer(Modifier.width(4.dp))
@@ -284,6 +288,8 @@ private fun MediaBlock(m: Msg, onOpen: () -> Unit) {
     val ready by Repo.ready.collectAsState()
     val progress by Repo.progress.collectAsState()
     val isReady = media.blob in ready
+    val expired by Repo.expired.collectAsState()
+    val gone = media.blob in expired
     val p = progress[media.blob]
     val ctx = LocalContext.current
 
@@ -307,7 +313,7 @@ private fun MediaBlock(m: Msg, onOpen: () -> Unit) {
             Column(Modifier.padding(start = 10.dp)) {
                 Text(media.name ?: "File", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
-                    MediaUtil.humanSize(media.size) + if (isReady) "" else " · tap to download",
+                    MediaUtil.humanSize(media.size) + if (isReady) "" else if (gone) " · no longer on the server" else " · tap to download",
                     color = C.Text.copy(alpha = 0.7f), fontSize = 12.sp,
                 )
             }
@@ -358,7 +364,8 @@ private fun MediaBlock(m: Msg, onOpen: () -> Unit) {
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
         } else if (!isReady) {
-            if (p != null) CircularProgressIndicator(progress = { p }, modifier = Modifier.size(40.dp), strokeWidth = 3.dp, color = Color.White)
+            if (gone) Text("No longer on the server", color = Color.White, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0x99000000)).padding(horizontal = 8.dp, vertical = 4.dp))
+            else if (p != null) CircularProgressIndicator(progress = { p }, modifier = Modifier.size(40.dp), strokeWidth = 3.dp, color = Color.White)
             else CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp, color = Color(0xAAFFFFFF))
         }
         if (media.kind == "gif") {

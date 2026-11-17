@@ -11,6 +11,7 @@ import android.widget.Toast
 import dev.daniel.scathechat.media.MediaUtil
 import dev.daniel.scathechat.call.CallManager
 import dev.daniel.scathechat.net.LinkPreview
+import dev.daniel.scathechat.net.Push
 import dev.daniel.scathechat.net.Rtdb
 import dev.daniel.scathechat.service.ChatService
 import dev.daniel.scathechat.service.Notifier
@@ -94,6 +95,8 @@ object Repo {
     val pendingShare = MutableStateFlow<List<Uri>>(emptyList())
     val showInvite = MutableStateFlow(false)
     val groupConfig = MutableStateFlow<JSONObject?>(null)
+    /** Media whose server copy was cleaned up and isn't on this phone. */
+    val expired = MutableStateFlow<Set<String>>(emptySet())
     private val sigDispatcher = java.util.concurrent.Executors.newSingleThreadExecutor().asCoroutineDispatcher()
 
     val fg = MutableStateFlow(false)
@@ -159,6 +162,13 @@ object Repo {
             loaded?.join()
             registerNetwork()
             connect()
+            launch {
+                delay(90_000)
+                while (started) {
+                    pruneServerMedia()
+                    delay(6 * 3600_000L)
+                }
+            }
             while (started) {
                 if (foreground) ping()
                 delay(45_000)
@@ -411,7 +421,12 @@ object Repo {
             } catch (e: Exception) {
                 return@forEach
             }
-            out[id] = Member(id, prof.optString("n", "?"), prof.optInt("c", 0), o.str("r"), o.optLong("a", 0L), prof.str("z"), typing = o.optLong("t", 0L))
+            val pub = prof.str("k")
+            val changed = pub != null && Identity.pin(id, pub, now())
+            out[id] = Member(
+                id, prof.optString("n", "?"), prof.optInt("c", 0), o.str("r"), o.optLong("a", 0L), prof.str("z"),
+                typing = o.optLong("t", 0L), pub = pub, keyChanged = changed, fcm = prof.str("f"),
+            )
         }
         me.value?.let { m ->
             if (m.id !in out) out[m.id] = Member(m.id, m.name, m.color, lastReadSent, now(), ZoneId.systemDefault().id)
@@ -466,14 +481,18 @@ object Repo {
         }.sortedBy { it.info.start ?: it.info.slots.firstOrNull() ?: it.created }
         val old = chat.value.events
         chat.value = ChatState(events, list, rmap, list.associateBy { it.id }, snapshot.mapTo(HashSet()) { it.id })
-        groupConfig.value = cfg?.data?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val newCfg = cfg?.data?.let { runCatching { JSONObject(it) }.getOrNull() }
+        if (newCfg?.toString() != groupConfig.value?.toString()) {
+            groupConfig.value = newCfg
+            Push.ensureInit(app)
+        }
         if (events != old) scope.launch { Reminders.sync(app, events, me.value?.id) }
     }
 
     // ---------------------------------------------------------------- outgoing
 
     private fun newMsg(type: String): Msg =
-        Msg(id = Crypto.hex(Crypto.random(12)), key = null, from = me.value!!.id, ts = now(), type = type, status = Msg.PENDING)
+        now().let { t -> Msg(id = Crypto.hex(Crypto.random(12)), key = null, from = me.value!!.id, ts = t, cts = t, type = type, status = Msg.PENDING) }
 
     private fun put(m: Msg) {
         synchronized(lock) { all[m.id] = m }
@@ -514,7 +533,8 @@ object Repo {
     /** Posts a message whose body is a JSON blob (calls, group settings). */
     fun postData(type: String, body: JSONObject) {
         val myId = me.value?.id ?: return
-        val m = Msg(id = Crypto.hex(Crypto.random(12)), key = null, from = myId, ts = now(), type = type,
+        val t = now()
+        val m = Msg(id = Crypto.hex(Crypto.random(12)), key = null, from = myId, ts = t, cts = t, type = type,
             data = body.toString(), status = Msg.PENDING)
         put(m)
         scope.launch { deliver(m) }
@@ -587,12 +607,15 @@ object Repo {
                 upload(g, media)
                 uploaded.add(media.blob)
             }
-            val payload = m.toPayload().toString().toByteArray(Charsets.UTF_8)
+            val latest = current(m)
+            val signed = if (latest.sig == null) latest.copy(sig = Identity.sign(Identity.canon(latest))) else latest
+            val payload = signed.toPayload().toString().toByteArray(Charsets.UTF_8)
             val box = Crypto.seal(g.key, payload, g.aad)
             val body = JSONObject().put("c", Crypto.b64(box)).put("t", JSONObject().put(".sv", "timestamp")).toString()
             val key = rtdb(g).post("rooms/${g.roomId}/m", body)
             val cur = current(m)
-            if (cur.key == null) put(cur.copy(key = key, status = Msg.SENT))
+            if (cur.key == null) put(cur.copy(key = key, status = Msg.SENT, sig = signed.sig))
+            if (m.type !in setOf("vote", "cfg")) Push.notifyOthers(urgent = m.type == "call")
         } catch (e: Exception) {
             Log.w(TAG, "deliver", e)
             val cur = current(m)
@@ -705,6 +728,7 @@ object Repo {
             return out
         } catch (e: Exception) {
             tmp.delete()
+            if (e.message?.startsWith("Missing part") == true) expired.update { it + media.blob }
             throw e
         } finally {
             clearProgress(media.blob)
@@ -771,13 +795,54 @@ object Repo {
         }
     }
 
+    /** Deletes photos/videos/files older than the group's retention setting from the server (not from phones). */
+    private fun pruneServerMedia() {
+        val g = group.value ?: return
+        val days = groupConfig.value?.optInt("retain", 90) ?: 90
+        if (days <= 0) return
+        val cutoff = now() - days * 86_400_000L
+        val done = prefs.pruned.toMutableSet()
+        val old = chat.value.messages.filter { it.media != null && it.key != null && it.ts < cutoff && it.media.blob !in done }
+        for (m in old) {
+            val media = m.media ?: continue
+            try {
+                val body = JSONObject()
+                for (i in 0 until media.chunks) body.put(i.toString(), JSONObject.NULL)
+                rtdb(g).patch("rooms/${g.roomId}/b/${media.blob}", body.toString())
+                done.add(media.blob)
+            } catch (e: Exception) {
+                Log.w(TAG, "prune", e)
+            }
+        }
+        prefs.pruned = done
+        prefs.lastPrune = System.currentTimeMillis()
+    }
+
+    /** Fetch anything new right now (used when a push wakes the app). Blocks up to a few seconds. */
+    fun syncNow() {
+        val g = group.value ?: return
+        try {
+            kotlinx.coroutines.runBlocking { loaded?.join() }
+            start()
+            val body = rtdb(g).since("rooms/${g.roomId}/m", lastKey)
+            val o = runCatching { JSONObject(body) }.getOrNull() ?: return
+            val entries = ArrayList<Pair<String, JSONObject>>()
+            o.keys().forEach { k -> o.optJSONObject(k)?.let { entries.add(k to it) } }
+            if (entries.isNotEmpty()) ingest(entries.sortedBy { it.first })
+        } catch (e: Exception) {
+            Log.w(TAG, "syncNow", e)
+        }
+    }
+
     fun pushProfile() {
         val g = group.value ?: return
         val m = me.value ?: return
         scope.launch {
             try {
-                val prof = JSONObject().put("n", m.name).put("c", m.color).put("z", ZoneId.systemDefault().id)
-                    .toString().toByteArray(Charsets.UTF_8)
+                val prof = JSONObject().put("n", m.name).put("c", m.color).put("z", ZoneId.systemDefault().id).apply {
+                    Identity.publicKey()?.let { put("k", it) }
+                    prefs.fcmToken?.let { put("f", it) }
+                }.toString().toByteArray(Charsets.UTF_8)
                 val box = Crypto.seal(g.key, prof, g.profileAad(m.id))
                 rtdb(g).put("rooms/${g.roomId}/s/${m.id}/p", JSONObject.quote(Crypto.b64(box)))
             } catch (e: Exception) {
@@ -887,6 +952,7 @@ object Repo {
 
     fun leave() {
         CallManager.hangUp()
+        Identity.clearPins()
         started = false
         synchronized(lock) {
             gen += 1

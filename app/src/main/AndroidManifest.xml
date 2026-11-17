@@ -87,6 +87,14 @@
             android:exported="false"
             android:foregroundServiceType="microphone|camera" />
 
+        <service
+            android:name=".net.PushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".net.UpdateReceiver"
             android:exported="false" />

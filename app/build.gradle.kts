@@ -6,6 +6,9 @@ plugins {
 
 // CI sets GITHUB_RUN_NUMBER, so every build gets a higher version and installs over the last one.
 val build = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+// With SIGNING_PASS set, CI signs the release itself with the rotated key (see .github/workflows/build.yml).
+val ciSigns = !System.getenv("SIGNING_PASS").isNullOrEmpty()
+val oldKey = file("scathe.keystore").exists()
 
 android {
     namespace = "dev.daniel.scathechat"
@@ -13,7 +16,7 @@ android {
 
     defaultConfig {
         applicationId = "dev.daniel.scathechat"
-        minSdk = 26
+        minSdk = 28
         targetSdk = 35
         versionCode = build
         versionName = "1.$build"
@@ -22,8 +25,8 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
-    // One fixed key so each new APK updates the app in place instead of needing a reinstall.
-    signingConfigs {
+    // The original key, only until the switch to the rotated key is complete.
+    if (oldKey) signingConfigs {
         create("scathe") {
             storeFile = file("scathe.keystore")
             storePassword = "scathechat"
@@ -33,12 +36,11 @@ android {
     }
 
     buildTypes {
-        debug { signingConfig = signingConfigs.getByName("scathe") }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("scathe")
+            signingConfig = if (!ciSigns && oldKey) signingConfigs.getByName("scathe") else null
         }
     }
 
@@ -73,6 +75,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
     implementation("dev.chrisbanes.haze:haze:1.1.1")
     implementation("io.getstream:stream-webrtc-android:1.3.9")
+    implementation("com.google.firebase:firebase-messaging:24.1.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-gif:2.7.0")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")

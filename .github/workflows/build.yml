@@ -19,10 +19,45 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - name: Build
+        env:
+          SIGNING_PASS: ${{ secrets.SIGNING_PASS }}
         run: |
           set -o pipefail
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease 2>&1 | tee build.log
+      - name: Sign
+        env:
+          SIGNING_PASS: ${{ secrets.SIGNING_PASS }}
+        run: |
+          set -e
+          if [ -z "$SIGNING_PASS" ]; then
+            cp app/build/outputs/apk/release/app-release.apk scathe-chat.apk
+            echo "::warning::SIGNING_PASS secret not set yet, so this build is signed with the old key."
+            exit 0
+          fi
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          KS="$RUNNER_TEMP/v2.keystore"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in signing/scathe-v2.keystore.enc -out "$KS" -pass env:SIGNING_PASS
+          if [ ! -f signing/lineage.bin ]; then
+            # One time only: the old key vouches for the new one, so installed apps accept the switch.
+            "$BT/apksigner" rotate --out signing/lineage.bin \
+              --old-signer --ks app/scathe.keystore --ks-key-alias scathe --ks-pass pass:scathechat --key-pass pass:scathechat --set-rollback false \
+              --new-signer --ks "$KS" --ks-key-alias scathe2 --ks-pass env:SIGNING_PASS --key-pass env:SIGNING_PASS
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add signing/lineage.bin
+            git commit -m "Add signing key lineage [skip ci]"
+            git push origin HEAD:main
+            echo "::notice::Created signing/lineage.bin"
+          fi
+          "$BT/zipalign" -p -f 4 app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign --ks "$KS" --ks-key-alias scathe2 --ks-pass env:SIGNING_PASS --key-pass env:SIGNING_PASS \
+            --lineage signing/lineage.bin --min-sdk-version 28 --rotation-min-sdk-version 28 \
+            --v1-signing-enabled false --v2-signing-enabled false --v3-signing-enabled true \
+            --out scathe-chat.apk "$RUNNER_TEMP/aligned.apk"
+          rm -f "$KS"
+          "$BT/apksigner" verify -v --print-certs scathe-chat.apk 2>&1 | grep -E "Verifie|Number of signers|certificate DN|SHA-256" | head -12 | while IFS= read -r l; do echo "::notice::$l"; done
+          "$BT/apksigner" lineage --in scathe-chat.apk --print-certs 2>&1 | grep -E "Signer|DN" | head -8 | while IFS= read -r l; do echo "::notice::lineage $l"; done || true
       - name: Report errors
         if: failure()
         run: |
@@ -36,7 +71,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/release/app-release.apk scathe-chat.apk
           gh release create "v1.${{ github.run_number }}" scathe-chat.apk \
             --title "Scathe Chat 1.${{ github.run_number }}" \
             --notes "Download **scathe-chat.apk** below on your Android phone and open it to install. Setup guide: see the README." \
