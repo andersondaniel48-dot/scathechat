@@ -49,17 +49,14 @@ import kotlin.math.sin
 
 private class Ember(val x: Float, val speed: Float, val size: Float, val phase: Float, val sway: Float, val hot: Float)
 
-@Composable
-private fun reducedMotion(): Boolean {
-    val ctx = LocalContext.current
-    return remember {
-        try {
-            Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-        } catch (_: Exception) {
-            false
-        }
-    }
+/** Runs animations at full speed even when the phone's system animations are turned off or scaled down. */
+object FullMotion : androidx.compose.ui.MotionDurationScale {
+    override val scaleFactor: Float get() = 1f
 }
+
+/** The app always animates, whatever the system animation setting (Daniel's call). */
+@Suppress("FunctionOnlyReturningConstant")
+private fun reducedMotion(): Boolean = false
 
 /**
  * The one moving thing in the app: a char-black field with fire breathing at the bottom

@@ -125,7 +125,7 @@ fun KillcamOverlay(info: KillcamInfo, members: Map<String, Member>, onDone: () -
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
     LaunchedEffect(Unit) {
-        anim.animateTo(6f, tween(6000, easing = LinearEasing))
+        kotlinx.coroutines.withContext(FullMotion) { anim.animateTo(6f, tween(6000, easing = LinearEasing)) }
         onDone()
     }
     val t = anim.value

@@ -709,7 +709,7 @@ fun SendFxOverlay(modifier: Modifier = Modifier) {
             if (e == LogoFx.Ev.SENT && Style.sendFx.value != "none") {
                 seed++
                 p.snapTo(0f)
-                p.animateTo(1f, tween(if (Style.sendFx.value == "blood") 1100 else 650, easing = LinearEasing))
+                kotlinx.coroutines.withContext(FullMotion) { p.animateTo(1f, tween(if (Style.sendFx.value == "blood") 1100 else 650, easing = LinearEasing)) }
             }
         }
     }

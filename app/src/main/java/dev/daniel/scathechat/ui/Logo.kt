@@ -229,13 +229,13 @@ fun ScatheLogo(modifier: Modifier = Modifier, tappable: Boolean = true, assemble
 
     // on screen for the first time: the plates fly in and lock
     LaunchedEffect(Unit) {
-        if (assemble) {
+        if (assemble) kotlinx.coroutines.withContext(FullMotion) {
             launch { alpha.animateTo(1f, tween(260)) }
             spreadFx.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 220f))
         }
     }
 
-    fun plateUp() = scope.launch {
+    fun plateUp() = scope.launch(FullMotion) {
         drops.forEach { it.snapTo(-170f) }
         for (i in 2 downTo 0) {
             launch {
@@ -250,19 +250,19 @@ fun ScatheLogo(modifier: Modifier = Modifier, tappable: Boolean = true, assemble
     LaunchedEffect(Unit) {
         LogoFx.events.collect { ev ->
             when (ev) {
-                LogoFx.Ev.SENT -> scope.launch {
+                LogoFx.Ev.SENT -> scope.launch(FullMotion) {
                     launch { punch.animateTo(0.92f, tween(70)); punch.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = 500f)) }
                     spreadFx.animateTo(0f, tween(110, easing = FastOutLinearInEasing))
                     flash.snapTo(1.3f)
                     launch { flash.animateTo(0f, tween(800)) }
                     spreadFx.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = 260f))
                 }
-                LogoFx.Ev.RECEIVED -> scope.launch {
+                LogoFx.Ev.RECEIVED -> scope.launch(FullMotion) {
                     launch { flash.snapTo(0.9f); flash.animateTo(0f, tween(1000)) }
                     tilt.animateTo(-7f, tween(70))
                     tilt.animateTo(0f, spring(dampingRatio = 0.25f, stiffness = 300f))
                 }
-                LogoFx.Ev.FAILED -> scope.launch {
+                LogoFx.Ev.FAILED -> scope.launch(FullMotion) {
                     launch { crack.animateTo(1f, tween(280)) }
                     repeat(6) { shake.animateTo(if (it % 2 == 0) 6f else -6f, tween(40)) }
                     shake.animateTo(0f, tween(60))
@@ -275,14 +275,14 @@ fun ScatheLogo(modifier: Modifier = Modifier, tappable: Boolean = true, assemble
     }
 
     // incoming call: rattle in time with the ring
-    LaunchedEffect(ringing) {
+    LaunchedEffect(ringing) { kotlinx.coroutines.withContext(FullMotion) {
         while (ringing) {
             repeat(10) { tilt.animateTo(if (it % 2 == 0) 5f else -5f, tween(32)) }
             tilt.animateTo(0f, tween(50))
             delay(750)
         }
         tilt.animateTo(0f, tween(100))
-    }
+    } }
     // someone typing: flickering seams
     LaunchedEffect(typing) {
         while (typing) {

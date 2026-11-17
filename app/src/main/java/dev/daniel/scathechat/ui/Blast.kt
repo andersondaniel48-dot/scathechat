@@ -89,7 +89,7 @@ fun FilthBlast(whenText: String, members: List<Member>, myId: String, onDone: ()
     val anim = remember { Animatable(0f) }
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(Unit) {
-        anim.animateTo(4.6f, tween(4600, easing = LinearEasing))
+        kotlinx.coroutines.withContext(FullMotion) { anim.animateTo(4.6f, tween(4600, easing = LinearEasing)) }
         onDone()
     }
     val t = anim.value
@@ -286,7 +286,7 @@ fun FilthBlast(whenText: String, members: List<Member>, myId: String, onDone: ()
 @Composable
 fun LockedInStamp(modifier: Modifier = Modifier) {
     val anim = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { anim.animateTo(4f, tween(4000, easing = LinearEasing)) }
+    LaunchedEffect(Unit) { kotlinx.coroutines.withContext(FullMotion) { anim.animateTo(4f, tween(4000, easing = LinearEasing)) } }
     val t = anim.value
     val density = LocalDensity.current
     val slam = seg(t, 0.0f, 0.28f)
