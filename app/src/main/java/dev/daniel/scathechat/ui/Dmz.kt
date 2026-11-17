@@ -346,6 +346,7 @@ fun DmzScreen(onClose: () -> Unit) {
     var downloading by remember { mutableStateOf(false) }
     var dlError by remember { mutableStateOf<String?>(null) }
     var linkDialog by remember { mutableStateOf(false) }
+    var working by remember { mutableStateOf<String?>(null) }
     val groupCfg by Repo.groupConfig.collectAsState()
 
     val cam = remember { Cam() }
@@ -387,7 +388,6 @@ fun DmzScreen(onClose: () -> Unit) {
         }
     }
 
-    var working by remember { mutableStateOf<String?>(null) }
     fun runSetup(m: Dmz.MapDef) {
         if (working != null) return
         working = "Getting the ${m.short} map and lining up the grid…"
