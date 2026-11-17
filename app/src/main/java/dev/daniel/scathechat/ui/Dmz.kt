@@ -1242,8 +1242,8 @@ private fun AlignScreen(bmp: ImageBitmap, map: Dmz.MapDef, initial: FloatArray, 
             for (c in 0..map.cols) drawLine(Color(0xCCFF5A1F), Offset(a.x + c * gw, a.y), Offset(a.x + c * gw, b.y), strokeWidth = 2f)
             for (r in 0..map.rows) drawLine(Color(0xCCFF5A1F), Offset(a.x, a.y + r * gh), Offset(b.x, a.y + r * gh), strokeWidth = 2f)
             val st = TextStyle(color = C.Flame, fontSize = 12.sp, fontFamily = Display)
-            for (c in 0 until map.cols) drawText(measurer, "${'A' + c}", Offset(a.x + c * gw + 4, a.y + 2), st)
-            for (r in 0 until map.rows) drawText(measurer, "${r + map.rowStart}", Offset(a.x + 4, a.y + r * gh + 16 * density.density), st)
+            for (c in 0 until map.cols) safeText(measurer, "${'A' + c}", Offset(a.x + c * gw + 4, a.y + 2), st)
+            for (r in 0 until map.rows) safeText(measurer, "${r + map.rowStart}", Offset(a.x + 4, a.y + r * gh + 16 * density.density), st)
             for (p in listOf(a, b)) {
                 drawCircle(Color(0x66FF5A1F), 26 * density.density, p)
                 drawCircle(C.Flame, 26 * density.density, p, style = Stroke(3f))

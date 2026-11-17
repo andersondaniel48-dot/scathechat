@@ -243,6 +243,17 @@ private fun DrawScope.noiseDots(seed: Int, n: Int, color: Color, maxR: Float) {
     repeat(n) { drawCircle(color.copy(alpha = color.alpha * (0.3f + rnd.nextFloat() * 0.7f)), rnd.nextFloat() * maxR + 0.4f, Offset(rnd.nextFloat() * size.width, rnd.nextFloat() * size.height)) }
 }
 
+/**
+ * Draws text at [topLeft] without the canvas-bounds constraint of DrawScope.drawText, which throws when the
+ * text starts at or past the canvas edge (e.g. kill-feed rows scrolling out). Off-canvas text is just skipped.
+ */
+fun DrawScope.safeText(m: androidx.compose.ui.text.TextMeasurer, text: String, topLeft: Offset, style: TextStyle) {
+    if (topLeft.x >= size.width || topLeft.y >= size.height) return
+    val lay = m.measure(text, style, maxLines = 1)
+    if (topLeft.x + lay.size.width <= 0f || topLeft.y + lay.size.height <= 0f) return
+    drawText(lay, topLeft = topLeft)
+}
+
 // ================================================================ emblems
 
 @Composable
@@ -451,7 +462,7 @@ private fun DrawScope.drawCard(id: String, t: Float, name: String, measurer: and
             drawLine(Color.White.copy(alpha = 0.8f), rc - Offset(h * 0.42f, 0f), rc - Offset(h * 0.06f, 0f), 1.4f)
             drawLine(Color.White.copy(alpha = 0.8f), rc + Offset(h * 0.06f, 0f), rc + Offset(h * 0.42f, 0f), 1.4f)
             drawLine(Color.White.copy(alpha = 0.8f), rc - Offset(0f, h * 0.42f), rc - Offset(0f, h * 0.06f), 1.4f)
-            drawText(measurer, "${212 + (t * 3).toInt() % 7}m", rc + Offset(h * 0.32f, h * 0.05f), TextStyle(color = Color.White, fontSize = 9.sp))
+            safeText(measurer, "${212 + (t * 3).toInt() % 7}m", rc + Offset(h * 0.32f, h * 0.05f), TextStyle(color = Color.White, fontSize = 9.sp))
         }
         "body_count" -> {
             drawRect(Brush.linearGradient(listOf(Color(0xFF5A5650), Color(0xFF2E2B27)), Offset.Zero, Offset(w, h)))
@@ -516,7 +527,7 @@ private fun DrawScope.drawCard(id: String, t: Float, name: String, measurer: and
                 val ix = left + 12f + lay.size.width
                 translate(ix, y + rowH * 0.1f) { scale(rowH * 0.6f / 100f, rowH * 0.6f / 100f, Offset.Zero) { drawEmblem("rifles", Color.White.copy(alpha = alpha)) } }
                 val e = enemies[((i + (t * 0.6f).toInt()) % enemies.size + enemies.size) % enemies.size]
-                drawText(measurer, e, Offset(ix + rowH * 0.7f, y + (rowH * 0.8f - lay.size.height) / 2), TextStyle(color = Color(0xFFFF5A5A).copy(alpha = alpha), fontSize = 10.sp, fontWeight = FontWeight.Bold))
+                safeText(measurer, e, Offset(ix + rowH * 0.7f, y + (rowH * 0.8f - lay.size.height) / 2), TextStyle(color = Color(0xFFFF5A5A).copy(alpha = alpha), fontSize = 10.sp, fontWeight = FontWeight.Bold))
             }
         }
         "armor_broke" -> {
@@ -571,7 +582,7 @@ private fun DrawScope.drawCard(id: String, t: Float, name: String, measurer: and
             }
             drawPath(path, col.copy(alpha = 0.3f), style = Stroke(5f))
             drawPath(path, col, style = Stroke(1.8f))
-            if (cyc > 0.75f && (t * 3).toInt() % 2 == 0) drawText(measurer, "FLATLINE", Offset(w * 0.72f, h * 0.12f), TextStyle(color = Color(0xFFFF2A2A), fontSize = 11.sp, fontFamily = Display))
+            if (cyc > 0.75f && (t * 3).toInt() % 2 == 0) safeText(measurer, "FLATLINE", Offset(w * 0.72f, h * 0.12f), TextStyle(color = Color(0xFFFF2A2A), fontSize = 11.sp, fontFamily = Display))
         }
         else -> drawRect(C.Char)
     }
