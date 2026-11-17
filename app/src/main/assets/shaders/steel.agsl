@@ -1,0 +1,51 @@
+// Firing range: brushed steel plate, pocked by rounds. Each hole has a punched-in crater, raised rim and scorch.
+uniform float2 iResolution;
+uniform float iTime;
+float holeH(float2 uv, float2 p, float s, float seed) {
+    float2 d = uv - p; float r = length(d) / s; float a = atan(d.y, d.x);
+    float petals = 0.35 * vnoise(float2(cos(a) * 2.0 + seed, sin(a) * 2.0 + seed));
+    float rim = smoothstep(0.75, 1.0, r) * smoothstep(1.9 + petals * 3.0, 1.1, r);
+    float pit = smoothstep(1.0, 0.6, r);
+    return rim * 0.6 - pit * 1.4;
+}
+float2 holeP(float fi, float a) { return float2(a * (0.07 + 0.87 * hash21(float2(fi, 3.0))), 0.08 + 0.84 * hash21(float2(fi, 9.0))); }
+float holeS(float fi, float a) { return (0.035 + 0.025 * hash21(float2(fi, 5.0))) * clamp(a / 2.0, 0.5, 1.0); }
+float field(float2 uv, float a) {
+    float h = 0.03 * vnoise(float2(uv.x * 2.0, uv.y * 260.0));        // brushing
+    h += 0.02 * fbm3(uv * 30.0);
+    for (int i = 0; i < 11; i++) {
+        float fi = float(i);
+        h += holeH(uv, holeP(fi, a), holeS(fi, a), fi);
+    }
+    return h;
+}
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / iResolution.y;
+    float e = 1.0 / iResolution.y;
+    float a = iResolution.x / iResolution.y;
+    float h = field(uv, a);
+    float hx = (field(uv + float2(e, 0.0), a) - h) / e;
+    float hy = (field(uv + float2(0.0, e), a) - h) / e;
+    float3 n = normalize(float3(-hx * 0.01, -hy * 0.01, 1.0));
+    float sweep = fract(iTime * 0.07) * 4.0 - 1.0;
+    float3 L = normalize(float3(sweep - uv.x * 0.3, -0.6, 0.7));
+    float diff = max(dot(n, L), 0.0);
+    float spec = pow(max(dot(reflect(-L, n), float3(0.0, 0.0, 1.0)), 0.0), 50.0);
+    float3 base = float3(0.24, 0.25, 0.27) * (0.8 + 0.3 * vnoise(float2(uv.x * 1.5, uv.y * 300.0)));
+    float3 col = base * (0.25 + 0.9 * diff) + spec * float3(0.9, 0.92, 0.95) * 0.7;
+    // cores, scorch and powder burns
+    float scorch = 0.0; float core = 0.0;
+    for (int i = 0; i < 11; i++) {
+        float fi = float(i);
+        float2 p = holeP(fi, a);
+        float s = holeS(fi, a);
+        float r = length(uv - p) / s;
+        core = max(core, smoothstep(0.62, 0.5, r));
+        scorch = max(scorch, smoothstep(3.2, 1.0, r) * (0.6 + 0.4 * vnoise((uv - p) * 120.0)));
+    }
+    col = mix(col, col * float3(0.45, 0.32, 0.22), scorch * 0.7);
+    col = mix(col, float3(0.0), core);
+    // rust and grime
+    col = mix(col, float3(0.25, 0.12, 0.05), smoothstep(0.62, 0.85, fbm(uv * 3.0 + 7.0)) * 0.5);
+    return half4(col, 1.0);
+}

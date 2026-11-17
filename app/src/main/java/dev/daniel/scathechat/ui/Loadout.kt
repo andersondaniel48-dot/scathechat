@@ -143,7 +143,16 @@ val CARDS = listOf(
     Item("kill_feed", "Kill Feed", "Your name, on repeat"),
     Item("armor_broke", "Armor Broke", "Plates shattered"),
     Item("redline", "Redline", "Heart monitor, flatlining"),
+    Item("headshot", "Headshot", "Red mist"),
+    Item("firing_range", "Firing Range", "Steel, full of holes"),
 )
+
+/** Which GPU scene sits behind each card (Android 13+). Cards in CARD_OVERLAY also keep their canvas details on top. */
+val CARD_SHADER = mapOf(
+    "kill_confirmed" to "blood", "tracer_storm" to "firefight", "frag_out" to "frag", "glass_jaw" to "glass", "thermal" to "thermal",
+    "body_count" to "blood", "napalm" to "fire", "kill_feed" to "smoke", "armor_broke" to "steel", "headshot" to "mist", "firing_range" to "steel",
+)
+private val CARD_OVERLAY = setOf("kill_confirmed", "thermal", "body_count", "kill_feed", "armor_broke")
 
 val EMBLEMS = listOf(
     Item("skull", "Skull", ""), Item("reticle", "Reticle", ""), Item("grenade", "Frag", ""), Item("knife", "Combat Knife", ""),
@@ -157,6 +166,15 @@ val BACKGROUNDS = listOf(
     Item("embers", "Embers", "Rising sparks"), Item("bullet_steel", "Firing Range", "Steel full of holes"),
     Item("blood_concrete", "Interrogation", "Blood on concrete"), Item("tracers", "Suppressing Fire", "Tracers overhead"),
     Item("thermal", "Thermal", "Heat signatures"), Item("tacmap", "Tac Map", "Contours and radar"), Item("smoke", "Smoke Screen", "Drifting smoke"),
+    Item("napalm", "Napalm", "The treeline burns"), Item("glass_jaw", "Glass Jaw", "Rounds through the window"), Item("headshot", "Red Mist", "Sprayed across the wall"),
+)
+
+/** Background scene, how often it ticks (slow scenes barely need to), and how much to darken it behind chat. */
+private class Bg(val shader: String, val fps: Int, val scrim: Float)
+private val BG_SHADER = mapOf(
+    "bullet_steel" to Bg("steel", 12, 0.30f), "blood_concrete" to Bg("blood", 8, 0.30f), "tracers" to Bg("firefight", 30, 0.15f),
+    "thermal" to Bg("thermal", 20, 0.40f), "smoke" to Bg("smoke", 20, 0.15f), "napalm" to Bg("fire", 30, 0.45f),
+    "glass_jaw" to Bg("glass", 15, 0.15f), "headshot" to Bg("mist", 24, 0.35f),
 )
 val BUBBLES = listOf(Item("glass", "Molten Glass", "Rounded"), Item("plate", "Armor Plate", "Cut corners"), Item("tactical", "Tactical", "Hard edges"), Item("tag", "Dog Tag", "Capsule"))
 val SEND_FX = listOf(Item("none", "None", ""), Item("muzzle", "Muzzle Flash", "Flash and brass"), Item("tracer", "Tracer", "A round downrange"),
@@ -259,9 +277,13 @@ fun DrawScope.safeText(m: androidx.compose.ui.text.TextMeasurer, text: String, t
 @Composable
 fun Emblem(id: String?, color: Int?, size: Dp, modifier: Modifier = Modifier) {
     val col = if (color == null || color == 0) C.Ember else Color(color)
+    val wear = remember { Shaders.handle("emblem") }
+    val seed = ((id ?: "skull").hashCode() and 0xFF) / 37f
     Canvas(modifier.size(size).graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) {
         val s = this.size.minDimension / 100f
         scale(s, s, pivot = Offset.Zero) { drawEmblem(id ?: "skull", col) }
+        // battle damage only lands on the emblem itself
+        if (wear != null) drawShader(wear, BlendMode.SrcAtop, "iSeed" to seed)
     }
 }
 
@@ -362,10 +384,14 @@ private fun DrawScope.drawEmblem(id: String, col: Color) {
 /** The animated banner behind a player's name. */
 @Composable
 fun CallingCard(card: String?, name: String, sub: String?, emblem: String?, emblemColor: Int?, modifier: Modifier = Modifier, animate: Boolean = true) {
-    val t = if (animate) rememberTime() else 2.2f
+    val id = card ?: "kill_confirmed"
+    val scene = CARD_SHADER[id]?.takeIf { Shaders.available(it) }
+    val canvas = scene == null || id in CARD_OVERLAY
+    val t = if (animate && canvas) rememberTime() else 2.2f
     val measurer = rememberTextMeasurer()
     Box(modifier.aspectRatio(3f).clip(RoundedCornerShape(10.dp)).border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(10.dp))) {
-        Canvas(Modifier.fillMaxSize()) { drawCard(card ?: "kill_confirmed", t, name, measurer) }
+        if (scene != null) ShaderArt(scene, Modifier.fillMaxSize(), res = 0.5f, fps = if (animate) 30 else 0)
+        if (canvas) Canvas(Modifier.fillMaxSize()) { drawCard(id, t, name, measurer, bg = scene == null) }
         // legibility scrim under the name
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color(0xB3000000), 0.6f to Color.Transparent)))
         Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -379,14 +405,17 @@ fun CallingCard(card: String?, name: String, sub: String?, emblem: String?, embl
     }
 }
 
-private fun DrawScope.drawCard(id: String, t: Float, name: String, measurer: androidx.compose.ui.text.TextMeasurer) {
+/** [bg] false = a shader already painted the scene; draw only the details that sit on top of it. */
+private fun DrawScope.drawCard(id: String, t: Float, name: String, measurer: androidx.compose.ui.text.TextMeasurer, bg: Boolean = true) {
     val w = size.width; val h = size.height
     val acc = C.Ember; val hot = C.Flame
     when (id) {
         "kill_confirmed" -> {
-            drawRect(Brush.linearGradient(listOf(Color(0xFF23262B), Color(0xFF0D0E10)), Offset.Zero, Offset(w, h)))
-            noiseDots(11, 260, Color(0x22FFFFFF), 1.2f)
-            bloodSplat(Offset(w * 0.78f, h * 0.42f), h * 0.32f, 7, drip = (0.6f + 0.4f * ((t * 0.08f) % 1f)))
+            if (bg) {
+                drawRect(Brush.linearGradient(listOf(Color(0xFF23262B), Color(0xFF0D0E10)), Offset.Zero, Offset(w, h)))
+                noiseDots(11, 260, Color(0x22FFFFFF), 1.2f)
+                bloodSplat(Offset(w * 0.78f, h * 0.42f), h * 0.32f, 7, drip = (0.6f + 0.4f * ((t * 0.08f) % 1f)))
+            }
             val swing = sin(t * 1.4f) * 5f
             for ((dx, base) in listOf(0.62f to -10f, 0.70f to 14f)) rotate(base + swing, Offset(w * dx, h * 0.05f)) {
                 val tl = Offset(w * dx - h * 0.16f, h * 0.30f)
@@ -447,17 +476,19 @@ private fun DrawScope.drawCard(id: String, t: Float, name: String, measurer: and
             bulletHole(Offset(w * 0.93f, h * 0.22f), h * 0.04f, 3, glass = true)
         }
         "thermal" -> {
-            drawRect(Color(0xFF1A0626))
-            val blobs = listOf(Triple(0.2f, 0.7f, 0xFF4A1070), Triple(0.5f, 0.3f, 0xFF7A1A8C), Triple(0.35f, 0.9f, 0xFFB0306A))
-            blobs.forEachIndexed { i, (x, y, c) ->
-                val o = Offset(w * (x + 0.05f * sin(t * 0.4f + i)), h * (y + 0.1f * cos(t * 0.3f + i)))
-                drawCircle(Brush.radialGradient(listOf(Color(c), Color.Transparent), o, h * 0.9f), h * 0.9f, o)
+            if (bg) {
+                drawRect(Color(0xFF1A0626))
+                val blobs = listOf(Triple(0.2f, 0.7f, 0xFF4A1070), Triple(0.5f, 0.3f, 0xFF7A1A8C), Triple(0.35f, 0.9f, 0xFFB0306A))
+                blobs.forEachIndexed { i, (x, y, c) ->
+                    val o = Offset(w * (x + 0.05f * sin(t * 0.4f + i)), h * (y + 0.1f * cos(t * 0.3f + i)))
+                    drawCircle(Brush.radialGradient(listOf(Color(c), Color.Transparent), o, h * 0.9f), h * 0.9f, o)
+                }
+                val body = Offset(w * 0.78f + sin(t * 0.7f) * w * 0.03f, h * 0.55f)
+                drawCircle(Brush.radialGradient(listOf(Color(0xFFFFFFE0), Color(0xFFFFC23D), Color(0xFFFF5A1F), Color.Transparent), body - Offset(0f, h * 0.27f), h * 0.16f), h * 0.16f, body - Offset(0f, h * 0.27f))
+                drawRoundRect(Brush.radialGradient(listOf(Color(0xFFFFF2A8), Color(0xFFFF7A2A), Color(0x00FF3B00)), body + Offset(0f, h * 0.12f), h * 0.42f),
+                    body - Offset(h * 0.17f, h * 0.12f), Size(h * 0.34f, h * 0.7f), CornerRadius(h * 0.12f))
             }
-            val body = Offset(w * 0.78f + sin(t * 0.7f) * w * 0.03f, h * 0.55f)
-            drawCircle(Brush.radialGradient(listOf(Color(0xFFFFFFE0), Color(0xFFFFC23D), Color(0xFFFF5A1F), Color.Transparent), body - Offset(0f, h * 0.27f), h * 0.16f), h * 0.16f, body - Offset(0f, h * 0.27f))
-            drawRoundRect(Brush.radialGradient(listOf(Color(0xFFFFF2A8), Color(0xFFFF7A2A), Color(0x00FF3B00)), body + Offset(0f, h * 0.12f), h * 0.42f),
-                body - Offset(h * 0.17f, h * 0.12f), Size(h * 0.34f, h * 0.7f), CornerRadius(h * 0.12f))
-            val rc = Offset(w * 0.78f, h * 0.36f)
+            val rc = if (bg) Offset(w * 0.78f, h * 0.36f) else Offset(w * 0.74f, h * 0.42f)
             drawCircle(Color.White.copy(alpha = 0.8f), h * 0.3f, rc, style = Stroke(1.4f))
             drawLine(Color.White.copy(alpha = 0.8f), rc - Offset(h * 0.42f, 0f), rc - Offset(h * 0.06f, 0f), 1.4f)
             drawLine(Color.White.copy(alpha = 0.8f), rc + Offset(h * 0.06f, 0f), rc + Offset(h * 0.42f, 0f), 1.4f)
@@ -465,9 +496,11 @@ private fun DrawScope.drawCard(id: String, t: Float, name: String, measurer: and
             safeText(measurer, "${212 + (t * 3).toInt() % 7}m", rc + Offset(h * 0.32f, h * 0.05f), TextStyle(color = Color.White, fontSize = 9.sp))
         }
         "body_count" -> {
-            drawRect(Brush.linearGradient(listOf(Color(0xFF5A5650), Color(0xFF2E2B27)), Offset.Zero, Offset(w, h)))
-            noiseDots(5, 600, Color(0x33000000), 1.6f)
-            noiseDots(6, 300, Color(0x22FFFFFF), 1f)
+            if (bg) {
+                drawRect(Brush.linearGradient(listOf(Color(0xFF5A5650), Color(0xFF2E2B27)), Offset.Zero, Offset(w, h)))
+                noiseDots(5, 600, Color(0x33000000), 1.6f)
+                noiseDots(6, 300, Color(0x22FFFFFF), 1f)
+            }
             val rnd = Random(12)
             val groups = 3
             val shown = ((t * 2.5f) % 22f).toInt().coerceAtMost(15)
@@ -511,7 +544,7 @@ private fun DrawScope.drawCard(id: String, t: Float, name: String, measurer: and
             }
         }
         "kill_feed" -> {
-            drawRect(Brush.verticalGradient(listOf(Color(0xFF15181C), Color(0xFF08090A))))
+            if (bg) drawRect(Brush.verticalGradient(listOf(Color(0xFF15181C), Color(0xFF08090A))))
             val enemies = listOf("ENEMY", "ROGUE OPERATOR", "LIEUTENANT", "SNIPER", "HEAVY", "MERC", "SHOCK TROOP")
             val rowH = h * 0.24f
             val scroll = (t * 0.6f) % 1f
@@ -531,7 +564,7 @@ private fun DrawScope.drawCard(id: String, t: Float, name: String, measurer: and
             }
         }
         "armor_broke" -> {
-            drawRect(Brush.radialGradient(listOf(Color(0xFF2A1A12), Color(0xFF080504)), Offset(w * 0.75f, h * 0.5f), w * 0.6f))
+            if (bg) drawRect(Brush.radialGradient(listOf(Color(0xFF2A1A12), Color(0xFF080504)), Offset(w * 0.75f, h * 0.5f), w * 0.6f))
             val cyc = (t % 3f) / 3f
             val burst = if (cyc < 0.5f) 0f else ((cyc - 0.5f) / 0.5f)
             val e = 1f - (1f - burst) * (1f - burst)
@@ -584,6 +617,16 @@ private fun DrawScope.drawCard(id: String, t: Float, name: String, measurer: and
             drawPath(path, col, style = Stroke(1.8f))
             if (cyc > 0.75f && (t * 3).toInt() % 2 == 0) safeText(measurer, "FLATLINE", Offset(w * 0.72f, h * 0.12f), TextStyle(color = Color(0xFFFF2A2A), fontSize = 11.sp, fontFamily = Display))
         }
+        "headshot" -> {
+            drawRect(Brush.linearGradient(listOf(Color(0xFF2E2C29), Color(0xFF141311)), Offset.Zero, Offset(w, h)))
+            noiseDots(8, 500, Color(0x22000000), 1.5f)
+            bloodSplat(Offset(w * 0.66f, h * 0.45f), h * 0.36f, 13, drip = 0.5f + 0.5f * ((t * 0.1f) % 1f))
+        }
+        "firing_range" -> {
+            drawRect(Brush.linearGradient(listOf(Color(0xFF2A2E33), Color(0xFF15171A)), Offset.Zero, Offset(w, h)))
+            val r = Random(6)
+            repeat(9) { i -> bulletHole(Offset(w * (0.35f + r.nextFloat() * 0.6f), h * (0.15f + r.nextFloat() * 0.7f)), h * 0.05f, i, glass = false) }
+        }
         else -> drawRect(C.Char)
     }
 }
@@ -598,7 +641,20 @@ fun ChatBackground(modifier: Modifier = Modifier) {
 
 @Composable
 fun ChatBackgroundImpl(id: String, modifier: Modifier) {
+    val bg = BG_SHADER[id]
+    if (bg == null || !Shaders.available(bg.shader)) {
+        // older phones: the newer scenes fall back to their nearest canvas cousin
+        val near = when (id) { "napalm" -> "embers"; "glass_jaw" -> "bullet_steel"; "headshot" -> "blood_concrete"; else -> null }
+        if (near != null) { ChatBackgroundImpl(near, modifier); return }
+    }
     if (id == "embers") { EmberBackground(modifier); return }
+    if (bg != null && Shaders.available(bg.shader)) {
+        Box(modifier) {
+            ShaderArt(bg.shader, Modifier.fillMaxSize(), res = 0.4f, fps = bg.fps)
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = bg.scrim)))
+        }
+        return
+    }
     val t = rememberTime()
     Canvas(modifier) {
         val w = size.width; val h = size.height
@@ -715,6 +771,10 @@ fun SendFxOverlay(modifier: Modifier = Modifier) {
     }
     val v = p.value
     if (v >= 1f) return
+    if (Style.sendFx.value == "blood" && Shaders.available("fxblood")) {
+        ShaderArt("fxblood", modifier, res = 0.5f, fps = 0) { listOf("iProgress" to p.value, "iSeed" to (seed % 17).toFloat()) }
+        return
+    }
     Canvas(modifier) {
         val w = size.width; val h = size.height
         val gun = Offset(w - 38.dp.toPx(), h - 46.dp.toPx())

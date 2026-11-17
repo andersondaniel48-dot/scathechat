@@ -1,0 +1,44 @@
+// Napalm: a burning treeline, heat-warped flames, black smoke and sparks.
+uniform float2 iResolution;
+uniform float iTime;
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / iResolution.y;          // y down
+    float t = iTime;
+    float aspect = iResolution.x / iResolution.y;
+    float h = 1.0 - uv.y;                            // height above the bottom
+    // sky: smoke-choked, lit orange from below
+    float smoke = fbm(float2(uv.x * 2.0 - t * 0.05, uv.y * 2.5 + t * 0.12));
+    float3 col = mix(float3(0.02, 0.01, 0.01), float3(0.28, 0.07, 0.02), smoothstep(0.9, 0.2, h) * 0.8);
+    col = mix(col, float3(0.05, 0.04, 0.04), smoothstep(0.35, 0.75, smoke) * smoothstep(0.2, 0.8, h));
+    // flames: domain-warped, rising noise
+    float2 q = float2(uv.x * 2.6, h * 2.0 - t * 1.3);
+    float w = fbm(q + float2(0.0, t * 0.5));
+    float f = fbm(q * 1.5 + float2(w * 1.6, -t * 0.8));
+    float base = 0.78 + 0.18 * fbm3(float2(uv.x * 1.5, t * 0.15));
+    float flame = clamp((f * 1.3 - h / base) * 2.2 + 0.55, 0.0, 1.0);
+    float3 fc = fireRamp(flame * (0.7 + 0.3 * fbm3(q * 3.0 + float2(0.0, -t * 2.0))));
+    // black smoke rolling off the flame tips
+    float soot = smoothstep(0.15, 0.0, flame) * smoothstep(0.3, 0.8, fbm(q * 0.9 + float2(5.0, t * 0.3))) * smoothstep(0.35, 0.95, h);
+    col = mix(col, float3(0.03, 0.025, 0.022), soot * 0.8);
+    col = mix(col, fc, smoothstep(0.04, 0.3, flame));
+    // conifer treeline (two layers) and ground in front of the fire
+    float tl = 0.0;
+    for (int L = 0; L < 2; L++) {
+        float fl = float(L);
+        float wdt = 0.05 + 0.03 * fl;
+        float gx = uv.x / wdt + fl * 0.37;
+        float k = floor(gx); float fx = fract(gx);
+        float th = (0.10 + 0.22 * hash21(float2(k, fl))) * step(0.18, hash21(float2(k + 7.0, fl)));
+        float prof = th * pow(1.0 - abs(fx - 0.5) * 2.0, 0.9) * (1.0 - 0.18 * step(0.5, fract(h * 60.0 / max(th, 0.05)) ) * 0.0);
+        prof += 0.012 * (vnoise(float2(uv.x * 140.0, h * 140.0)) - 0.5) * step(0.01, prof);
+        tl = max(tl, prof + 0.07 + 0.04 * fl);
+    }
+    float tree = smoothstep(tl + 0.003, tl - 0.003, h);
+    col = mix(col, float3(0.01, 0.007, 0.005) + fc * 0.05, tree * 0.96);
+    col = mix(col, float3(0.015, 0.01, 0.008), smoothstep(0.075, 0.05, h));
+    col += float3(0.5, 0.12, 0.02) * smoothstep(0.02, 0.0, abs(h - 0.075)) * 0.4;
+    // sparks and embers riding the heat
+    float3 sp = voronoi(float2(uv.x * 20.0 + sin(uv.y * 6.0 + t) * 0.4, uv.y * 12.0 + t * 2.6));
+    col += float3(1.0, 0.62, 0.22) * step(0.92, sp.y) * smoothstep(0.08, 0.0, sp.x) * smoothstep(0.2, 0.7, h);
+    return half4(col, 1.0);
+}

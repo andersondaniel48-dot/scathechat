@@ -1,0 +1,49 @@
+// Frag out: a grenade detonation on loop. Fireball, shockwave, shrapnel, then a column of smoke.
+uniform float2 iResolution;
+uniform float iTime;
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / iResolution.y;
+    float aspect = iResolution.x / iResolution.y;
+    float cyc = fract(iTime / 3.2);
+    float2 c = float2(aspect * 0.72, 0.78);
+    float2 d = uv - c; float r = length(d);
+    // ground and dusk sky
+    float3 col = mix(float3(0.10, 0.07, 0.05), float3(0.02, 0.018, 0.016), smoothstep(0.0, 0.8, 1.0 - uv.y));
+    float ground = smoothstep(0.80, 0.82, uv.y);
+    col = mix(col, float3(0.05, 0.04, 0.03) * (0.6 + 0.6 * fbm(uv * 12.0)), ground);
+    // fireball: turbulent, grows fast, burns out into billowing smoke
+    float grow = 1.0 - pow(1.0 - clamp(cyc / 0.15, 0.0, 1.0), 3.0);
+    float cool = clamp((cyc - 0.22) / 0.6, 0.0, 1.0);
+    float R = 0.16 + 0.55 * grow + 0.15 * cool;
+    float2 p = d / R;
+    float2 w = float2(fbm(p * 1.8 + float2(cyc * 2.0, 0.0)), fbm(p * 1.8 + float2(5.2, cyc * 2.0)));
+    float turb = fbm(p * 2.2 + w * 1.8 + float2(0.0, cyc * 2.5));
+    float shape = length(p * float2(0.95, 1.3)) - 0.25 * (turb - 0.5) * 2.0 - 0.15 * (w.x - 0.5);
+    float ball = smoothstep(1.0, 0.7, shape) * step(uv.y, 0.83);
+    float core = smoothstep(0.8, 0.0, shape);
+    float heat = clamp(core * (1.15 - cool * 1.2) * (0.6 + 0.8 * turb), 0.0, 1.0);
+    float3 smoke = float3(0.06, 0.055, 0.05) * (0.5 + 1.0 * turb) + float3(0.25, 0.08, 0.02) * heat * 0.5;
+    float3 blast = mix(smoke, fireRamp(heat * 0.95), smoothstep(0.05, 0.5, heat));
+    col = mix(col, blast, ball * (1.0 - 0.6 * smoothstep(0.85, 1.0, cyc)));
+    col += float3(0.9, 0.35, 0.08) * 0.25 * smoothstep(1.6, 0.6, shape) * (1.0 - cool);
+    // rising smoke column after the blast
+    float colm = smoothstep(0.18, 0.0, abs(d.x) - 0.05 - (c.y - uv.y) * 0.4) * step(uv.y, c.y) * smoothstep(0.1, 0.5, cool);
+    col = mix(col, float3(0.07, 0.065, 0.06) * (0.6 + 0.8 * fbm(uv * 4.0 + float2(0.0, iTime * 0.3))), colm * 0.8);
+    // flash
+    col += float3(1.0, 0.8, 0.55) * smoothstep(0.05, 0.0, cyc) * 0.6;
+    // shockwave ring and dust kick-up
+    float sw = cyc * 2.2;
+    col += float3(0.9, 0.7, 0.5) * smoothstep(0.03, 0.0, abs(r - sw)) * (1.0 - smoothstep(0.0, 0.35, cyc)) * 0.25 * fbm3(uv * 20.0);
+    // shrapnel streaks
+    for (int i = 0; i < 18; i++) {
+        float fi = float(i);
+        float a = -3.14159 * (0.05 + 0.9 * hash21(float2(fi, 1.0)));
+        float sp = 0.6 + 1.6 * hash21(float2(fi, 2.0));
+        float2 u = float2(cos(a), sin(a));
+        float2 head = c + u * sp * cyc + float2(0.0, cyc * cyc * 1.2);
+        float2 tail = head - u * 0.05;
+        float k = smoothstep(0.004, 0.0, segDist(uv, tail, head)) * (1.0 - smoothstep(0.2, 0.6, cyc));
+        col += float3(1.0, 0.7, 0.3) * k;
+    }
+    return half4(col, 1.0);
+}

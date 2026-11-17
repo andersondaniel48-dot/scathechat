@@ -1,0 +1,34 @@
+// Send effect: blood thrown across the screen edges, mist hanging, then drying off. Premultiplied overlay.
+uniform float2 iResolution;
+uniform float iTime;
+uniform float iProgress;
+uniform float iSeed;
+float field(float2 uv, float aspect, float drip) {
+    float a = splat(uv, float2(aspect * 0.05, 0.22), 0.16, iSeed, drip, normalize(float2(1.0, 0.3)));
+    a = max(a, splat(uv, float2(aspect * 0.97, 0.58), 0.12, iSeed + 3.0, drip * 0.7, normalize(float2(-1.0, -0.2))));
+    return a;
+}
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / iResolution.y;
+    float aspect = iResolution.x / iResolution.y;
+    float v = iProgress;
+    float drip = 0.2 + v * 1.4;
+    float th = field(uv, aspect, drip);
+    float e = 1.5 / iResolution.y;
+    float dx = (field(uv + float2(e, 0.0), aspect, drip) - th) / e * 0.004;
+    float dy = (field(uv + float2(0.0, e), aspect, drip) - th) / e * 0.004;
+    float fade = (v < 0.08 ? v / 0.08 : 1.0) * (1.0 - smoothstep(0.55, 1.0, v));
+    float cov = smoothstep(0.0, 0.06, th);
+    float3 col = shadeBlood(float3(0.0), th, dx, dy);
+    float a = cov * fade;
+    // red mist hanging in the air, strongest right after impact
+    float mist = fbm(uv * 9.0 + float2(v * 0.6, iSeed)) * (1.0 - smoothstep(0.0, 0.5, v));
+    float edge = max(smoothstep(0.35, 0.0, uv.x / aspect), smoothstep(0.65, 1.0, uv.x / aspect));
+    float ma = mist * edge * 0.55;
+    // vignette of red at the edges
+    float2 c = float2(aspect * 0.5, 0.5);
+    float vig = smoothstep(0.45, 1.1, length((uv - c) / float2(aspect, 1.0)) * 1.4) * 0.5 * fade;
+    float3 outc = col * a + float3(0.45, 0.01, 0.02) * ma * (1.0 - a) + float3(0.25, 0.0, 0.01) * vig * (1.0 - a);
+    float outa = a + ma * (1.0 - a) + vig * (1.0 - a) * (1.0 - ma);
+    return half4(outc, clamp(outa, 0.0, 1.0));
+}

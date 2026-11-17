@@ -1,0 +1,26 @@
+// Battle damage laid over an emblem (drawn SrcAtop, so it only lands on the emblem itself):
+// brushed-metal streaks, grime, bright scratches and dried blood. Output is premultiplied.
+uniform float2 iResolution;
+uniform float iTime;
+uniform float iSeed;
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / iResolution.y * 3.0 + iSeed * 7.31;
+    float3 col = float3(0.0); float a = 0.0;
+    // brushing: alternating light/dark streaks
+    float br = vnoise(float2(uv.x * 1.5, uv.y * 60.0)) - 0.5;
+    col = mix(col, float3(br > 0.0 ? 1.0 : 0.0), 1.0); a = abs(br) * 0.28;
+    // top light, bottom shade
+    float sh = fragCoord.y / iResolution.y;
+    col = mix(col, float3(0.0), smoothstep(0.4, 1.0, sh)); a = max(a, smoothstep(0.45, 1.0, sh) * 0.45);
+    // grime
+    float g = smoothstep(0.52, 0.8, fbm(uv * 1.3));
+    col = mix(col, float3(0.05, 0.035, 0.02), g); a = max(a, g * 0.6);
+    // scratches
+    float s = smoothstep(0.955, 1.0, vnoise(float2(uv.x * 1.2 + uv.y * 14.0, uv.y * 1.2 - uv.x * 14.0)));
+    col = mix(col, float3(1.0), s); a = max(a, s * 0.7);
+    // dried blood: a smear plus a few flecks
+    float3 m = voronoi(uv * 2.2);
+    float b = max(smoothstep(0.7, 0.78, fbm(uv * 0.9 + 11.0)), step(0.9, m.y) * smoothstep(0.08 + 0.18 * m.z, 0.04, m.x));
+    col = mix(col, float3(0.32, 0.0, 0.02), b); a = max(a, b * 0.9);
+    return half4(col * a, a);
+}
