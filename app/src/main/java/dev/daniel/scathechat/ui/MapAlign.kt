@@ -185,9 +185,78 @@ object MapAlign {
         val fx = fit(meanProfile(H, true), maskLines(meanProfile(G, true), gridCal[0], gridCal[2], cols))
         val fy = fit(meanProfile(H, false), maskLines(meanProfile(G, false), gridCal[1], gridCal[3], rows))
         if (fx.r < 0.8f || fy.r < 0.8f) return null
+        // check (and fine-tune) the match in 2D on edges, which ignores colour and tint differences
+        val Hs = lum(hi, 240); val Gs = lum(grid, 240)
+        val eh = edges(Hs); val eg = edges(Gs)
+        var ax = fx.a; var bx = fx.b; var ay = fy.a; var by = fy.b
+        var best = ncc2d(eh, Hs.w, Hs.h, eg, Gs.w, Gs.h, ax, bx, ay, by)
+        repeat(2) {
+            for (pass in 0..1) {
+                val a0 = if (pass == 0) ax else ay
+                val b0 = if (pass == 0) bx else by
+                var ia = -6
+                while (ia <= 6) {
+                    var ib = -10
+                    while (ib <= 10) {
+                        val a = a0 * (1 + ia * 0.005f); val b = b0 + ib * 0.003f
+                        val r = if (pass == 0) ncc2d(eh, Hs.w, Hs.h, eg, Gs.w, Gs.h, a, b, ay, by)
+                        else ncc2d(eh, Hs.w, Hs.h, eg, Gs.w, Gs.h, ax, bx, a, b)
+                        if (r > best) {
+                            best = r
+                            if (pass == 0) { ax = a; bx = b } else { ay = a; by = b }
+                        }
+                        ib++
+                    }
+                    ia++
+                }
+            }
+        }
+        if (best < 0.5f) return null
         return floatArrayOf(
-            (gridCal[0] - fx.b) / fx.a, (gridCal[1] - fy.b) / fy.a,
-            (gridCal[2] - fx.b) / fx.a, (gridCal[3] - fy.b) / fy.a,
+            (gridCal[0] - bx) / ax, (gridCal[1] - by) / ay,
+            (gridCal[2] - bx) / ax, (gridCal[3] - by) / ay,
         )
+    }
+
+    /** Edge strength, lightly blurred so small offsets still overlap. */
+    private fun edges(L: Lum): FloatArray {
+        val w = L.w; val h = L.h
+        val e = FloatArray(w * h)
+        for (y in 1 until h - 1) for (x in 1 until w - 1) {
+            val gx = L[x + 1, y] - L[x - 1, y]; val gy = L[x, y + 1] - L[x, y - 1]
+            e[y * w + x] = sqrt(gx * gx + gy * gy)
+        }
+        val o = FloatArray(w * h)
+        for (y in 1 until h - 1) for (x in 1 until w - 1) {
+            var s = 0f
+            for (dy in -1..1) for (dx in -1..1) s += e[(y + dy) * w + x + dx]
+            o[y * w + x] = s / 9f
+        }
+        return o
+    }
+
+    /** Correlation of the two edge maps where gridded x = a*u + b (fractions), sampled on a 120x120 lattice. */
+    private fun ncc2d(eh: FloatArray, hw: Int, hh: Int, eg: FloatArray, gw: Int, gh: Int, ax: Float, bx: Float, ay: Float, by: Float): Float {
+        val n = 120
+        var cnt = 0; var sh = 0.0; var sg = 0.0; var shh = 0.0; var sgg = 0.0; var shg = 0.0
+        for (j in 0 until n) {
+            val y = (j + 0.5f) / n
+            val v = (y - by) / ay
+            if (v < 0f || v >= 1f) continue
+            val hy = (v * hh).toInt().coerceIn(0, hh - 1); val gy = (y * gh).toInt().coerceIn(0, gh - 1)
+            for (i in 0 until n) {
+                val x = (i + 0.5f) / n
+                val u = (x - bx) / ax
+                if (u < 0f || u >= 1f) continue
+                val a = eh[hy * hw + (u * hw).toInt().coerceIn(0, hw - 1)].toDouble()
+                val b = eg[gy * gw + (x * gw).toInt().coerceIn(0, gw - 1)].toDouble()
+                cnt++; sh += a; sg += b; shh += a * a; sgg += b * b; shg += a * b
+            }
+        }
+        if (cnt < n * n * 0.5) return -1f
+        val mh = sh / cnt; val mg = sg / cnt
+        val cov = shg / cnt - mh * mg
+        val vh = shh / cnt - mh * mh; val vg = sgg / cnt - mg * mg
+        return (cov / (sqrt(vh * vg) + 1e-9)).toFloat()
     }
 }

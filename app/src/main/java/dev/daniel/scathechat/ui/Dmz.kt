@@ -290,11 +290,13 @@ private fun autoSetup(ctx: Context, map: Dmz.MapDef): Setup {
 }
 
 /** The group's shared backgrounds: one person lines up the grid, everyone gets it. */
-private fun sharedMap(map: String): JSONObject? = Repo.groupConfig.value?.optJSONObject("maps")?.optJSONObject(map)
+private const val ALIGN_V = 2 // bump to make every phone redo the automatic line-up
+private fun sharedMap(map: String): JSONObject? =
+    Repo.groupConfig.value?.optJSONObject("maps")?.optJSONObject(map)?.takeIf { it.optInt("v") >= ALIGN_V }
 private fun shareMap(map: String, url: String, cal: FloatArray) {
     val next = JSONObject(Repo.groupConfig.value?.toString() ?: "{}")
     val maps = next.optJSONObject("maps") ?: JSONObject()
-    maps.put(map, JSONObject().put("url", url).put("cal", cal.joinToString(",")))
+    maps.put(map, JSONObject().put("url", url).put("cal", cal.joinToString(",")).put("v", ALIGN_V))
     next.put("maps", maps)
     Repo.postData("cfg", next)
 }
@@ -405,8 +407,8 @@ fun DmzScreen(onClose: () -> Unit) {
     // first time on a map with no background and nothing shared yet: just do it
     LaunchedEffect(mapId) {
         val prefs = ctx.getSharedPreferences("dmz", 0)
-        if (sharedMap(mapId) == null && !imgFile(ctx, mapId).exists() && !prefs.getBoolean("auto_$mapId", false)) {
-            prefs.edit().putBoolean("auto_$mapId", true).apply()
+        if (sharedMap(mapId) == null && srcOf(ctx, mapId) != "local" && !prefs.getBoolean("auto${ALIGN_V}_$mapId", false)) {
+            prefs.edit().putBoolean("auto${ALIGN_V}_$mapId", true).apply()
             runSetup(map)
         }
     }
@@ -786,15 +788,7 @@ private fun DrawScope.drawMap(
         val y = cam.toScreen(Offset(0f, (r + 0.5f) * CELL)).y
         drawLabel(measurer, "${r + map.rowStart}", Offset((tl.x - 10 * dp).coerceAtLeast(10 * dp), y), axis)
     }
-    // grid square names inside cells when zoomed in
-    if (cellPx > 220 * dp / 2) {
-        val small = TextStyle(color = Color(0x55F5EADF), fontSize = 10.sp)
-        for (c in 0 until map.cols) for (r in 0 until map.rows) {
-            val p = cam.toScreen(Offset(c * CELL + 6f / cam.scale * dp, r * CELL + 4f / cam.scale * dp))
-            if (p.x < -50 || p.y < -50 || p.x > size.width || p.y > size.height) continue
-            drawText(measurer, Dmz.gridLabel(map, c, r), p, small)
-        }
-    }
+    val taken = ArrayList<androidx.compose.ui.geometry.Rect>()
 
     // zones (named locations), coloured by threat
     val zoneText = TextStyle(color = C.Bone, fontSize = 13.sp, fontFamily = Display)
@@ -805,7 +799,7 @@ private fun DrawScope.drawMap(
         val col = threatColor(z.threat)
         drawCircle(col.copy(alpha = if (z == selZone) 0.3f else 0.14f), r, c)
         drawCircle(col.copy(alpha = 0.75f), r, c, style = Stroke(if (z == selZone) 3f * dp else 1.4f * dp, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f))))
-        drawLabel(measurer, z.name, c - Offset(0f, if (r > 40 * dp) r * 0.15f else 0f), zoneText, halo = true)
+        drawLabel(measurer, z.name, c - Offset(0f, if (r > 40 * dp) r * 0.15f else 0f), zoneText, halo = true, taken = taken, maxWidth = (170 * dp).toInt())
     }
     // X01 areas
     val selSpot = (sel as? Sel.SpotSel)?.spot
@@ -817,12 +811,12 @@ private fun DrawScope.drawMap(
             (if (a == selSpot) C.Ember else Color(0x88F5EADF)), topLeft = c - Offset(r, r * 0.55f), size = Size(2 * r, 1.1f * r),
             cornerRadius = CornerRadius(12 * dp), style = Stroke(if (a == selSpot) 3f * dp else 1.2f * dp),
         )
-        drawLabel(measurer, a.name, c, zoneText, halo = true)
+        drawLabel(measurer, a.name, c, zoneText, halo = true, taken = taken, maxWidth = (170 * dp).toInt())
     }
 
     // markers
     val mr = (cellPx * 0.075f).coerceIn(5f * dp, 12f * dp)
-    val showNames = cellPx > 260 * dp
+    val showNames = cellPx > 340 * dp
     val glyphStyle = TextStyle(color = Color(0xFF140A06), fontSize = (mr / dp * 1.05f).sp, fontWeight = FontWeight.Bold)
     val nameStyle = TextStyle(color = C.Bone, fontSize = 11.sp)
     var selAt: Offset? = null
@@ -841,7 +835,10 @@ private fun DrawScope.drawMap(
             drawCircle(col, mr, c)
         }
         if (mr > 7 * dp) drawLabel(measurer, glyph(p.spot.kind), c, glyphStyle)
-        if (showNames) drawLabel(measurer, p.spot.name, c + Offset(0f, mr + 9 * dp), nameStyle, halo = true, maxWidth = (cellPx * 0.42f).toInt())
+        if (showNames || p.spot == selSpot) drawLabel(
+            measurer, p.spot.name, c + Offset(0f, mr + 9 * dp), nameStyle, halo = true,
+            maxWidth = (cellPx * 0.36f).toInt().coerceAtMost((150 * dp).toInt()), taken = taken, lines = 1,
+        )
         if (p.spot == selSpot) selAt = c
     }
 
@@ -860,7 +857,7 @@ private fun DrawScope.drawMap(
         drawPath(path, Color(0xCC000000), style = Stroke(3 * dp))
         drawPath(path, col)
         drawCircle(memberColor(pin.by), h * 0.17f, c - Offset(0f, h * 0.8f))
-        drawLabel(measurer, pin.label, c + Offset(0f, 10 * dp), nameStyle, halo = true, maxWidth = (160 * dp).toInt())
+        drawLabel(measurer, pin.label, c + Offset(0f, 10 * dp), nameStyle, halo = true, maxWidth = (150 * dp).toInt(), taken = taken, lines = 1)
         if ((sel as? Sel.PinSel)?.pin?.pid == pin.pid) selAt = c - Offset(0f, h * 0.6f)
     }
 
@@ -872,22 +869,30 @@ private fun DrawScope.drawMap(
     }
 }
 
+/** Draws a centred label. With [taken], skips it (returns false) if it would overlap a label already drawn. */
 private fun DrawScope.drawLabel(
     m: androidx.compose.ui.text.TextMeasurer, text: String, center: Offset, style: TextStyle,
-    halo: Boolean = false, maxWidth: Int = Int.MAX_VALUE,
-) {
+    halo: Boolean = false, maxWidth: Int = Int.MAX_VALUE, taken: MutableList<androidx.compose.ui.geometry.Rect>? = null, lines: Int = 2,
+): Boolean {
     val lay = m.measure(
         text, style,
         constraints = if (maxWidth == Int.MAX_VALUE) androidx.compose.ui.unit.Constraints() else androidx.compose.ui.unit.Constraints(maxWidth = maxWidth.coerceAtLeast(1)),
-        overflow = TextOverflow.Ellipsis, maxLines = 2,
+        overflow = TextOverflow.Ellipsis, maxLines = lines,
     )
     val tl = center - Offset(lay.size.width / 2f, lay.size.height / 2f)
-    if (tl.x > size.width || tl.y > size.height || tl.x + lay.size.width < 0 || tl.y + lay.size.height < 0) return
+    if (tl.x > size.width || tl.y > size.height || tl.x + lay.size.width < 0 || tl.y + lay.size.height < 0) return false
+    if (taken != null) {
+        val pad = 4 * density
+        val r = androidx.compose.ui.geometry.Rect(tl.x - pad, tl.y - pad, tl.x + lay.size.width + pad, tl.y + lay.size.height + pad)
+        if (taken.any { it.overlaps(r) }) return false
+        taken.add(r)
+    }
     if (halo) drawRoundRect(
         Color(0xB30B0705), topLeft = tl - Offset(4 * density, 1 * density),
         size = Size(lay.size.width + 8 * density, lay.size.height + 2 * density), cornerRadius = CornerRadius(6 * density),
     )
     drawText(lay, topLeft = tl)
+    return true
 }
 
 // ---------------------------------------------------------------- pieces
