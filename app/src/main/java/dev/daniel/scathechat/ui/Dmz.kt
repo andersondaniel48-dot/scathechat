@@ -46,6 +46,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
@@ -1064,7 +1065,7 @@ private fun DetailCard(
                 Dmz.map(s.map).short to C.Smoke,
             )
             body = listOf(s.place, s.detail).filter { it.isNotBlank() }.joinToString("\n")
-            share = "📍 ${s.name}: ${s.grid}, ${s.place} (${Dmz.map(s.map).short})"
+            share = "📍 ${s.name} · ${s.grid}, ${s.place} (${Dmz.map(s.map).short})" + if (s.detail.isNotBlank()) "\n${s.detail}" else ""
         }
         is Sel.ZoneSel -> {
             val z = sel.zone
@@ -1104,10 +1105,17 @@ private fun DetailCard(
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             share?.let { text ->
-                GlassButton(onClick = { Repo.sendText(text, null, null, allowPreview = false) }) {
-                    Icon(Icons.Filled.Send, null, tint = C.Bone, modifier = Modifier.size(16.dp))
+                var sent by remember(text) { mutableStateOf(false) }
+                GlassButton(onClick = {
+                    if (!sent) {
+                        if (Repo.me.value == null || Repo.group.value == null) return@GlassButton
+                        Repo.sendText(text, null, null, allowPreview = false)
+                        sent = true
+                    }
+                }) {
+                    Icon(if (sent) Icons.Filled.Check else Icons.Filled.Send, null, tint = if (sent) C.Online else C.Bone, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    ButtonLabel("Send to chat", 14)
+                    ButtonLabel(if (sent) "Sent to the chat" else "Send to chat", 14)
                 }
             }
             if (pin != null && pin.by == myId) GlassButton(onClick = { onDeletePin(pin) }) {
