@@ -62,6 +62,17 @@ object Updater {
         }
     }
 
+    /** Safe mode: fetch and install the newest build right away (no waiting for the app to go idle). */
+    fun fixNow(ctx: Context) {
+        Repo.scope.launch {
+            try {
+                if (check(force = true)) { download(ctx); install(ctx) }
+            } catch (e: Exception) {
+                Log.w(TAG, "fixNow", e)
+            }
+        }
+    }
+
     /** When a ready update exists, install it the next time the app goes to the background. */
     fun onBackground(ctx: Context) {
         if (Repo.prefs.autoUpdate && state.value == "ready") Repo.scope.launch { installWhenIdle(ctx) }
