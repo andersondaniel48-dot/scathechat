@@ -141,19 +141,8 @@ object CallManager {
 
     fun decline() = stopRinging()
 
-    private fun startRinging() {
-        try {
-            val r = RingtoneManager.getRingtone(ctx, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
-            r?.audioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
-            if (Build.VERSION.SDK_INT >= 28) r?.isLooping = true
-            r?.play()
-            ringtone = r
-            ctx.getSystemService(Vibrator::class.java)?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 700, 900), 1))
-        } catch (e: Exception) {
-            Log.w(TAG, "ring", e)
-        }
-    }
+    /** The incoming-call notification does the ringing, so the phone's own rules (Do Not Disturb, silent) decide. */
+    private fun startRinging() {}
 
     private fun stopRinging() {
         incoming.value = null

@@ -72,7 +72,7 @@ object Notifier {
     const val SERVICE_ID = 2
     const val CALL_ID = 3
     private const val INCOMING_ID = 4
-    private const val CH_CALL = "calls"
+    private const val CH_CALL = "calls_ring"
     private const val CH_INCALL = "in_call"
     const val ACTION_ANSWER = "dev.daniel.scathechat.ANSWER"
     const val ACTION_INCOMING = "dev.daniel.scathechat.INCOMING"
@@ -85,10 +85,17 @@ object Notifier {
             description = "New messages from the group"
             enableVibration(true)
         })
+        nm.deleteNotificationChannel("calls") // old channel: the app rang by itself, ignoring Do Not Disturb
+        // Android plays the ring, so Do Not Disturb, silent/vibrate mode and per-app exceptions all apply.
         nm.createNotificationChannel(NotificationChannel(CH_CALL, "Incoming calls", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "Rings when a brother calls"
-            setSound(null, null) // the app plays the ringtone itself
-            enableVibration(false)
+            setSound(
+                android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE),
+                android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
+            )
+            enableVibration(true)
+            vibrationPattern = longArrayOf(0, 700, 900, 700, 900, 700, 900)
         })
         nm.createNotificationChannel(NotificationChannel(CH_INCALL, "Ongoing call", NotificationManager.IMPORTANCE_LOW).apply {
             setShowBadge(false)
@@ -180,11 +187,11 @@ object Notifier {
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
         val full = PendingIntent.getActivity(
-            ctx, 10, Intent(ctx, MainActivity::class.java).setAction(ACTION_INCOMING).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            ctx, 10, Intent(ctx, dev.daniel.scathechat.CallActivity::class.java).setAction(ACTION_INCOMING).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val answer = PendingIntent.getActivity(
-            ctx, 11, Intent(ctx, MainActivity::class.java).setAction(ACTION_ANSWER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            ctx, 11, Intent(ctx, dev.daniel.scathechat.CallActivity::class.java).setAction(ACTION_ANSWER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val decline = PendingIntent.getBroadcast(
@@ -204,6 +211,7 @@ object Notifier {
             .addAction(0, "Decline", decline)
             .addAction(0, "Answer", answer)
             .build()
+            .apply { flags = flags or Notification.FLAG_INSISTENT } // keep ringing until answered, declined or timed out
         try {
             NotificationManagerCompat.from(ctx).notify(INCOMING_ID, n)
         } catch (_: SecurityException) {

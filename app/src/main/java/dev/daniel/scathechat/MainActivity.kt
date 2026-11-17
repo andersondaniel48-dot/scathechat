@@ -48,13 +48,7 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(i: Intent?) {
         i ?: return
         when (i.action) {
-            Notifier.ACTION_INCOMING, Notifier.ACTION_ANSWER -> {
-                if (Build.VERSION.SDK_INT >= 27) {
-                    setShowWhenLocked(true)
-                    setTurnScreenOn(true)
-                }
-                if (i.action == Notifier.ACTION_ANSWER) CallManager.answerRequested.value = true
-            }
+            Notifier.ACTION_ANSWER -> CallManager.answerRequested.value = true
             Intent.ACTION_VIEW -> i.data?.toString()?.let { Repo.pendingInvite.value = it }
             Intent.ACTION_SEND -> {
                 val text = i.getStringExtra(Intent.EXTRA_TEXT)
