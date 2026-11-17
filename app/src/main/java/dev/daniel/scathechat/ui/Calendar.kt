@@ -189,6 +189,8 @@ fun CalendarScreen(onClose: () -> Unit) {
     val me by Repo.me.collectAsState()
     val myId = me?.id ?: return
     var create by remember { mutableStateOf<String?>(null) }
+    var blast by remember { mutableStateOf<EventInfo?>(null) }
+    var freshEid by remember { mutableStateOf<String?>(null) }
     val now by produceState(Repo.now()) {
         while (true) {
             delay(20_000); value = Repo.now()
@@ -230,7 +232,7 @@ fun CalendarScreen(onClose: () -> Unit) {
                 }
                 if (upcoming.isNotEmpty()) {
                     item { SectionLabel("COMING UP") }
-                    items(upcoming, key = { "u" + it.info.eid }) { ScheduledCard(it, members, myId, now) }
+                    items(upcoming, key = { "u" + it.info.eid }) { ScheduledCard(it, members, myId, now, fresh = it.info.eid == freshEid) }
                 }
                 if (past.isNotEmpty()) {
                     item { SectionLabel("PAST") }
@@ -251,7 +253,14 @@ fun CalendarScreen(onClose: () -> Unit) {
             }
         }
     }
-    create?.let { kind -> CreateEventSheet(kind, members, myId) { create = null } }
+    create?.let { kind -> CreateEventSheet(kind, members, myId, onScheduled = { blast = it }) { create = null } }
+    blast?.let { b ->
+        val tags = members.values.sortedWith(compareBy({ it.id != myId }, { it.name.lowercase() }))
+        FilthBlast(b.start?.let { localDateTime(it) } ?: "", tags, myId) {
+            freshEid = b.eid
+            blast = null
+        }
+    }
 }
 
 @Composable
@@ -414,11 +423,19 @@ private fun PollCard(e: CalEvent, members: Map<String, Member>, myId: String, no
 }
 
 @Composable
-private fun ScheduledCard(e: CalEvent, members: Map<String, Member>, myId: String, now: Long) {
+private fun ScheduledCard(e: CalEvent, members: Map<String, Member>, myId: String, now: Long, fresh: Boolean = false) {
+    Box {
+        ScheduledCardBody(e, members, myId, now, fresh)
+        if (fresh) LockedInStamp(Modifier.align(Alignment.Center))
+    }
+}
+
+@Composable
+private fun ScheduledCardBody(e: CalEvent, members: Map<String, Member>, myId: String, now: Long, fresh: Boolean) {
     val start = e.info.start ?: return
     val rel = relative(start, e.info.dur, now)
     val live = rel == "LIVE NOW"
-    CardShell(e, members, highlight = live) {
+    CardShell(e, members, highlight = live || fresh) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(localDateTime(start), style = fireText(19.sp, glow = 0.4f), modifier = Modifier.weight(1f))
             GlassPill(rel, hot = live)
@@ -494,7 +511,7 @@ private fun quickTimes(): List<Pair<String, Long>> {
 }
 
 @Composable
-private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, myId: String, onDismiss: () -> Unit) {
+private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, myId: String, onScheduled: (EventInfo) -> Unit, onDismiss: () -> Unit) {
     val kind = "filth"
     var title by remember { mutableStateOf(kindName(initialKind.takeIf { it == "filth" } ?: "filth")) }
     var titleEdited by remember { mutableStateOf(false) }
@@ -562,13 +579,14 @@ private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, 
             Spacer(Modifier.height(18.dp))
             FireButton(
                 onClick = {
-                    Repo.saveEvent(
-                        EventInfo(
+                    val info = EventInfo(
                             eid = Crypto.hex(Crypto.random(8)), kind = "filth", title = title.trim().ifBlank { kindName(kind) },
                             note = note.trim().ifBlank { null }, slots = slots.sorted(), dur = dur, final = null,
                             cancelled = false, tz = null, act = "new",
                         )
-                    )
+                    Repo.saveEvent(info)
+                    info.start?.let { Repo.vote(info.eid, it, "y") }
+                    onScheduled(info)
                     onDismiss()
                 },
                 enabled = slots.isNotEmpty(),
