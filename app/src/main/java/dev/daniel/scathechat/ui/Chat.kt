@@ -101,6 +101,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Videocam
 import dev.daniel.scathechat.call.CallManager
 import androidx.compose.runtime.mutableIntStateOf
@@ -185,6 +187,9 @@ fun ChatScreen() {
 
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     var showCalendar by rememberSaveable { mutableStateOf(false) }
+    var showLibrary by rememberSaveable { mutableStateOf(false) }
+    var showSearch by rememberSaveable { mutableStateOf(false) }
+    var highlightId by remember { mutableStateOf<String?>(null) }
     var actionsFor by remember { mutableStateOf<Msg?>(null) }
     var viewer by remember { mutableStateOf<Msg?>(null) }
     var replyTo by remember { mutableStateOf<Msg?>(null) }
@@ -339,6 +344,7 @@ fun ChatScreen() {
                                     }
                                 },
                                 onReact = { Repo.react(m, it) },
+                                highlight = m.id == highlightId,
                             )
                         }
                     }
@@ -371,6 +377,8 @@ fun ChatScreen() {
                 onInvite = { sheet = Sheet.INVITE },
                 onSettings = { sheet = Sheet.SETTINGS },
                 onCalendar = { showCalendar = true },
+                onSearch = { showSearch = true },
+                onLibrary = { showLibrary = true },
                 onCall = { video -> withCallPermissions(video) { CallManager.start(video) } },
                 upcoming = state.events.count { e ->
                     val s = e.info.start
@@ -450,7 +458,21 @@ fun ChatScreen() {
         )
     }
 
+    fun jumpTo(m: Msg) {
+        showSearch = false
+        showLibrary = false
+        val idx = rows.indexOfFirst { it.key == m.id }
+        if (idx < 0) return
+        scope.launch {
+            listState.scrollToItem(idx)
+            highlightId = m.id
+            delay(2400)
+            if (highlightId == m.id) highlightId = null
+        }
+    }
     if (showCalendar) CalendarScreen(onClose = { showCalendar = false })
+    if (showLibrary) MediaLibrary(onClose = { showLibrary = false }, onJump = { jumpTo(it) })
+    if (showSearch) ChatSearch(onClose = { showSearch = false }, onJump = { jumpTo(it) })
     CallOverlay(acceptWithPermissions = { video, action -> withCallPermissions(video, action) })
 
     actionsFor?.let { m ->
@@ -552,6 +574,8 @@ private fun TopBar(
     onInvite: () -> Unit,
     onSettings: () -> Unit,
     onCalendar: () -> Unit,
+    onSearch: () -> Unit,
+    onLibrary: () -> Unit,
     onCall: (Boolean) -> Unit,
     upcoming: Int,
 ) {
@@ -597,6 +621,8 @@ private fun TopBar(
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Menu", tint = C.Bone) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Color(0xFF221610)) {
+                DropdownMenuItem(text = { Text("Search chat") }, leadingIcon = { Icon(Icons.Filled.Search, null) }, onClick = { menu = false; onSearch() })
+                DropdownMenuItem(text = { Text("Media & files") }, leadingIcon = { Icon(Icons.Filled.PhotoLibrary, null) }, onClick = { menu = false; onLibrary() })
                 DropdownMenuItem(text = { Text("Calendar") }, leadingIcon = { Icon(Icons.Filled.CalendarMonth, null) }, onClick = { menu = false; onCalendar() })
                 DropdownMenuItem(text = { Text("Members") }, leadingIcon = { Icon(Icons.Filled.Group, null) }, onClick = { menu = false; onMembers() })
                 DropdownMenuItem(text = { Text("Invite a brother") }, leadingIcon = { Icon(Icons.Filled.QrCode, null) }, onClick = { menu = false; onInvite() })

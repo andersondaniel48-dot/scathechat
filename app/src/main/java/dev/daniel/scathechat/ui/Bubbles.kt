@@ -101,7 +101,9 @@ fun MessageRow(
     onLongPress: () -> Unit,
     onOpenMedia: () -> Unit,
     onReact: (String) -> Unit,
+    highlight: Boolean = false,
 ) {
+    val glow by androidx.compose.animation.core.animateFloatAsState(if (highlight) 1f else 0f, androidx.compose.animation.core.tween(400), label = "hl")
     val big = 18.dp
     val small = 5.dp
     val shape = if (mine) {
@@ -114,7 +116,8 @@ fun MessageRow(
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(top = if (first) 8.dp else 2.dp),
+            .padding(top = if (first) 8.dp else 2.dp)
+            .background(C.Ember.copy(alpha = 0.22f * glow), RoundedCornerShape(14.dp)),
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
     ) {
         if (!mine && first) {
