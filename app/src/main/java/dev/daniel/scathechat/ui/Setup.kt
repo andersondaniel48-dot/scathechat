@@ -133,7 +133,7 @@ private fun SetupContent(mode: String, setMode: (String) -> Unit) {
 
 @Composable
 private fun Logo(size: Int = 132) {
-    Image(painterResource(R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(size.dp))
+    ScatheLogo(Modifier.size(size.dp))
 }
 
 @Composable

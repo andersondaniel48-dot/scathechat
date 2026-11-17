@@ -357,6 +357,10 @@ object Repo {
             if (m.ts < recent) continue
             if (media.kind == "image" || media.kind == "gif" || (media.kind == "video" && media.size < 25L * 1024 * 1024)) requestMedia(m)
         }
+        val mine = me.value?.id
+        if (!suppressNotify && fresh.any { it.from != mine && it.type !in setOf("vote", "cfg", "call") && it.ts > now() - 60_000 }) {
+            dev.daniel.scathechat.ui.LogoFx.emit(dev.daniel.scathechat.ui.LogoFx.Ev.RECEIVED)
+        }
         if (suppressNotify || (foreground && viewing)) return
         val myId = me.value?.id
         val names = members.value
@@ -503,6 +507,7 @@ object Repo {
     private fun current(m: Msg): Msg = synchronized(lock) { all[m.id] } ?: m
 
     fun sendText(text: String, link: LinkInfo?, replyTo: String?, allowPreview: Boolean = true) {
+        dev.daniel.scathechat.ui.LogoFx.emit(dev.daniel.scathechat.ui.LogoFx.Ev.SENT)
         if (me.value == null) return
         val first = newMsg("text").copy(text = text, link = link, replyTo = replyTo)
         put(first)
@@ -558,6 +563,7 @@ object Repo {
     }
 
     fun sendMedia(uri: Uri, replyTo: String?) {
+        dev.daniel.scathechat.ui.LogoFx.emit(dev.daniel.scathechat.ui.LogoFx.Ev.SENT)
         if (me.value == null || group.value == null) return
         scope.launch {
             try {
@@ -619,7 +625,10 @@ object Repo {
         } catch (e: Exception) {
             Log.w(TAG, "deliver", e)
             val cur = current(m)
-            if (cur.key == null) put(cur.copy(status = Msg.FAILED))
+            if (cur.key == null) {
+                put(cur.copy(status = Msg.FAILED))
+                dev.daniel.scathechat.ui.LogoFx.emit(dev.daniel.scathechat.ui.LogoFx.Ev.FAILED)
+            }
         } finally {
             inFlight.remove(m.id)
         }

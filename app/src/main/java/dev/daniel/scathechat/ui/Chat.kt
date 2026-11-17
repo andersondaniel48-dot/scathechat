@@ -660,7 +660,7 @@ private fun TopBar(
             .padding(start = 6.dp, end = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Image(painterResource(R.drawable.ic_logo), null, modifier = Modifier.size(48.dp))
+        ScatheLogo(Modifier.size(46.dp))
         Column(
             Modifier
                 .weight(1f)
@@ -720,7 +720,7 @@ private fun DayChip(label: String) {
 @Composable
 private fun EmptyState(onInvite: () -> Unit, modifier: Modifier) {
     Column(modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Image(painterResource(R.drawable.ic_logo), null, modifier = Modifier.size(120.dp))
+        ScatheLogo(Modifier.size(120.dp))
         Text("Quiet in here", style = fireText(26.sp))
         Spacer(Modifier.height(8.dp))
         Text(
