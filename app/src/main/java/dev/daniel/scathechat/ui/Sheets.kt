@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -273,7 +274,7 @@ private fun ActionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun ActionsSheet(m: Msg, mine: Boolean, onDismiss: () -> Unit, onReact: (String) -> Unit, onReply: () -> Unit) {
+fun ActionsSheet(m: Msg, mine: Boolean, onDismiss: () -> Unit, onReact: (String) -> Unit, onReply: () -> Unit, onKillcam: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by Repo.chat.collectAsState()
@@ -290,6 +291,7 @@ fun ActionsSheet(m: Msg, mine: Boolean, onDismiss: () -> Unit, onReact: (String)
             }
             Spacer(Modifier.height(6.dp))
             ActionRow(Icons.AutoMirrored.Filled.Reply, "Reply", onReply)
+            ActionRow(Icons.Filled.Videocam, "Killcam reply", onKillcam)
             val text = m.text
             if (!text.isNullOrBlank()) ActionRow(Icons.Filled.ContentCopy, "Copy text") { copyText(ctx, "Message", text); onDismiss() }
             m.link?.let { l -> ActionRow(Icons.AutoMirrored.Filled.OpenInNew, "Open link") { openUrl(ctx, l.url); onDismiss() } }

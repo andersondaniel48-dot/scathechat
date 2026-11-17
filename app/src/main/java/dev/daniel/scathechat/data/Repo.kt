@@ -411,7 +411,7 @@ object Repo {
             } catch (e: Exception) {
                 return@forEach
             }
-            out[id] = Member(id, prof.optString("n", "?"), prof.optInt("c", 0), o.str("r"), o.optLong("a", 0L), prof.str("z"))
+            out[id] = Member(id, prof.optString("n", "?"), prof.optInt("c", 0), o.str("r"), o.optLong("a", 0L), prof.str("z"), typing = o.optLong("t", 0L))
         }
         me.value?.let { m ->
             if (m.id !in out) out[m.id] = Member(m.id, m.name, m.color, lastReadSent, now(), ZoneId.systemDefault().id)
@@ -754,6 +754,21 @@ object Repo {
     fun openBox(b64: String, aad: ByteArray): JSONObject? {
         val g = group.value ?: return null
         return try { JSONObject(String(Crypto.open(g.key, Crypto.unb64(b64), aad), Charsets.UTF_8)) } catch (_: Exception) { null }
+    }
+
+    @Volatile private var typingSent = 0L
+
+    /** Lets the others see "… is typing". Throttled to one write every 4 seconds. */
+    fun setTyping(on: Boolean) {
+        val g = group.value ?: return
+        val m = me.value ?: return
+        val now = System.currentTimeMillis()
+        if (on && now - typingSent < 4000) return
+        if (!on && typingSent == 0L) return
+        typingSent = if (on) now else 0L
+        scope.launch(sigDispatcher) {
+            try { rtdb(g).put("rooms/${g.roomId}/s/${m.id}/t", if (on) "{\".sv\":\"timestamp\"}" else "null") } catch (_: Exception) {}
+        }
     }
 
     fun pushProfile() {

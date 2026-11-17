@@ -22,6 +22,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.zIndex
 import dev.daniel.scathechat.call.VideoTextureView
+import dev.daniel.scathechat.call.CallEffects
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.foundation.horizontalScroll
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.compose.animation.core.RepeatMode
@@ -181,6 +184,8 @@ private fun CallScreen() {
     val camOn by CallManager.cameraOn.collectAsState()
     val speaker by CallManager.speaker.collectAsState()
     val members by Repo.members.collectAsState()
+    val effect by CallEffects.current.collectAsState()
+    var showFx by remember { mutableStateOf(false) }
     val elapsed by produceState(0L, a.cid) {
         while (true) {
             value = System.currentTimeMillis() - a.startedAt
@@ -210,9 +215,27 @@ private fun CallScreen() {
             } else {
                 TileArea(tiles, members, a.video, Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp))
             }
+            if (a.video && showFx) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp).padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CallEffects.Effect.entries.forEach { fx ->
+                        val on = effect == fx
+                        val shape = RoundedCornerShape(16.dp)
+                        Text(
+                            fx.label, color = if (on) Color.White else C.Bone, fontFamily = Display, fontSize = 13.sp,
+                            modifier = Modifier
+                                .then(if (on) Modifier.molten(shape) else Modifier.glass(shape, fill = Color(0x40140A06), rim = 0.6f))
+                                .clickable { CallEffects.current.value = fx }
+                                .padding(horizontal = 14.dp, vertical = 9.dp),
+                        )
+                    }
+                }
+            }
             // Controls: sized to the screen so they never run under the gesture bar
             BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 16.dp)) {
-                val count = if (a.video) 5 else 3
+                val count = if (a.video) 6 else 3
                 val btn = ((maxWidth - 40.dp) / count - 10.dp).coerceIn(44.dp, 58.dp)
                 Row(
                     Modifier.fillMaxWidth().glass(RoundedCornerShape(30.dp), fill = Color(0x40140A06)).padding(vertical = 10.dp),
@@ -223,6 +246,7 @@ private fun CallScreen() {
                     if (a.video) {
                         CallButton(if (camOn) Icons.Filled.Videocam else Icons.Filled.VideocamOff, if (camOn) "Camera off" else "Camera on", on = !camOn, size = btn) { CallManager.setCamera(!camOn) }
                         CallButton(Icons.Filled.Cameraswitch, "Flip camera", on = false, size = btn) { CallManager.flipCamera() }
+                        CallButton(Icons.Filled.AutoAwesome, "Effects", on = showFx || effect != CallEffects.Effect.NONE, size = btn) { showFx = !showFx }
                     }
                     CallButton(Icons.AutoMirrored.Filled.VolumeUp, if (speaker) "Speaker on" else "Speaker off", on = speaker, size = btn) { CallManager.setSpeaker(!speaker) }
                     Box(

@@ -101,6 +101,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.LocationOn
+import dev.daniel.scathechat.media.LocationDrop
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Videocam
@@ -190,6 +192,13 @@ fun ChatScreen() {
     var showLibrary by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var highlightId by remember { mutableStateOf<String?>(null) }
+    var killcamFor by remember { mutableStateOf<Msg?>(null) }
+    var killcam by remember { mutableStateOf<KillcamInfo?>(null) }
+    var locDialog by remember { mutableStateOf(false) }
+    val locPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
+        if (res.values.any { it }) locDialog = true
+        else Toast.makeText(ctx, "Location permission is needed to drop your location", Toast.LENGTH_SHORT).show()
+    }
     var actionsFor by remember { mutableStateOf<Msg?>(null) }
     var viewer by remember { mutableStateOf<Msg?>(null) }
     var replyTo by remember { mutableStateOf<Msg?>(null) }
@@ -225,6 +234,9 @@ fun ChatScreen() {
     val newest = state.messages.lastOrNull()
     LaunchedEffect(newest?.id) {
         if (newest != null && (listState.firstVisibleItemIndex <= 2 || newest.from == myId)) listState.animateScrollToItem(0)
+        if (newest != null && newest.type == "killcam" && Repo.foreground && Repo.now() - newest.ts < 20_000) {
+            killcam = killcamOf(newest, state.byId)
+        }
     }
 
     // Notifications permission (Android 13+), then battery optimisation, once each.
@@ -314,6 +326,10 @@ fun ChatScreen() {
                         is Row.Day -> DayChip(row.label)
                         is Row.Bubble -> if (row.m.type == "event") {
                             EventChatCard(row.m, members, myId) { showCalendar = true }
+                        } else if (row.m.type == "loc") {
+                            LocationCard(row.m, row.m.from == myId, members[row.m.from])
+                        } else if (row.m.type == "killcam") {
+                            KillcamCard(row.m, members, myId, state.byId) { killcam = killcamOf(row.m, state.byId) }
                         } else if (row.m.type == "call") {
                             CallChatCard(row.m, members, myId) { cid, video, by -> withCallPermissions(video) { CallManager.join(cid, video, by) } }
                         } else {
@@ -455,6 +471,12 @@ fun ChatScreen() {
                 else camPermission.launch(Manifest.permission.CAMERA)
             },
             onFiles = { pickFiles.launch(arrayOf("*/*")) },
+            onLocation = {
+                val granted = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                    .any { ContextCompat.checkSelfPermission(ctx, it) == PackageManager.PERMISSION_GRANTED }
+                if (granted) locDialog = true
+                else locPerms.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            },
         )
     }
 
@@ -473,6 +495,7 @@ fun ChatScreen() {
     if (showCalendar) CalendarScreen(onClose = { showCalendar = false })
     if (showLibrary) MediaLibrary(onClose = { showLibrary = false }, onJump = { jumpTo(it) })
     if (showSearch) ChatSearch(onClose = { showSearch = false }, onJump = { jumpTo(it) })
+    killcam?.let { k -> KillcamOverlay(k, members) { killcam = null } }
     CallOverlay(acceptWithPermissions = { video, action -> withCallPermissions(video, action) })
 
     actionsFor?.let { m ->
@@ -482,6 +505,53 @@ fun ChatScreen() {
             onDismiss = { actionsFor = null },
             onReact = { Repo.react(m, it); actionsFor = null },
             onReply = { replyTo = m; actionsFor = null },
+            onKillcam = { killcamFor = m; actionsFor = null },
+        )
+    }
+    killcamFor?.let { target ->
+        var caption by remember(target.id) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { killcamFor = null },
+            title = { Text("Killcam reply") },
+            text = {
+                Column {
+                    Text("Everyone gets a slow-mo replay of this message. Add a caption if you want.", color = C.Dim, fontSize = 14.sp)
+                    Spacer(Modifier.height(10.dp))
+                    androidx.compose.material3.OutlinedTextField(caption, { caption = it }, placeholder = { Text("Ratio'd") }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    Repo.postData("killcam", org.json.JSONObject().put("t", target.id).put("c", caption.trim()))
+                    killcamFor = null
+                }) { Text("Send killcam") }
+            },
+            dismissButton = { TextButton(onClick = { killcamFor = null }) { Text("Cancel", color = C.Dim) } },
+            containerColor = Color(0xFF1C120E),
+        )
+    }
+    if (locDialog) {
+        var note by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { locDialog = false },
+            title = { Text("Drop your location?") },
+            text = {
+                Column {
+                    Text("Sends a map of where you are right now to the group, encrypted.", color = C.Dim, fontSize = 14.sp)
+                    Spacer(Modifier.height(10.dp))
+                    androidx.compose.material3.OutlinedTextField(note, { note = it }, placeholder = { Text("Note (optional)") }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    locDialog = false
+                    val n = note
+                    Toast.makeText(ctx, "Getting your location…", Toast.LENGTH_SHORT).show()
+                    scope.launch { LocationDrop.drop(ctx, n)?.let { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show() } }
+                }) { Text("Drop it") }
+            },
+            dismissButton = { TextButton(onClick = { locDialog = false }) { Text("Cancel", color = C.Dim) } },
+            containerColor = Color(0xFF1C120E),
         )
     }
     when (sheet) {
@@ -603,7 +673,12 @@ private fun TopBar(
                     Box(Modifier.size(7.dp).clip(CircleShape).background(C.Online))
                     Spacer(Modifier.width(5.dp))
                 }
-                Text(subtitle, color = if (subtitleAlert) Color(0xFFFFB4A0) else C.Smoke, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val live = liveSubtitle()
+                Text(
+                    if (subtitleAlert) subtitle else live ?: subtitle,
+                    color = if (subtitleAlert) Color(0xFFFFB4A0) else if (live != null) C.Flame else C.Smoke,
+                    fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
             }
         }
         Box {
@@ -670,6 +745,7 @@ private fun Composer(
     onPhotos: () -> Unit,
     onCamera: () -> Unit,
     onFiles: () -> Unit,
+    onLocation: () -> Unit,
 ) {
     var text by rememberSaveable { mutableStateOf("") }
     val draft by Repo.draft.collectAsState()
@@ -704,6 +780,7 @@ private fun Composer(
             .padding(start = 10.dp, end = 10.dp, bottom = 8.dp, top = 4.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        TypingRow()
         if (replyTo != null) {
             Row(Modifier.fillMaxWidth().blurGlass(hazeState, card).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.AutoMirrored.Filled.Reply, null, tint = C.Ember, modifier = Modifier.size(18.dp))
@@ -745,11 +822,12 @@ private fun Composer(
                         DropdownMenuItem(text = { Text("Photos & videos") }, leadingIcon = { Icon(Icons.Filled.Image, null) }, onClick = { menu = false; onPhotos() })
                         DropdownMenuItem(text = { Text("Camera") }, leadingIcon = { Icon(Icons.Filled.PhotoCamera, null) }, onClick = { menu = false; onCamera() })
                         DropdownMenuItem(text = { Text("File") }, leadingIcon = { Icon(Icons.Filled.AttachFile, null) }, onClick = { menu = false; onFiles() })
+                        DropdownMenuItem(text = { Text("Location drop") }, leadingIcon = { Icon(Icons.Filled.LocationOn, null) }, onClick = { menu = false; onLocation() })
                     }
                 }
                 TextField(
                     value = text,
-                    onValueChange = { text = it },
+                    onValueChange = { text = it; Repo.setTyping(it.isNotBlank()) },
                     placeholder = { Text("Message", color = C.Faint) },
                     maxLines = 6,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -773,6 +851,7 @@ private fun Composer(
                     .then(if (canSend) Modifier.molten(CircleShape) else Modifier.blurGlass(hazeState, CircleShape))
                     .clickable(enabled = canSend) {
                         val t = text.trim()
+                        Repo.setTyping(false)
                         if (t.isNotEmpty()) {
                             val link = if (url != null && url != dismissed) preview?.takeIf { it.url == url } else null
                             onSend(t, link, url == null || url != dismissed)
@@ -802,3 +881,36 @@ fun Pill(text: String) {
     GlassPill(text)
 }
 
+
+/** Who's typing right now (others only), refreshed every second without recomposing the whole chat. */
+@Composable
+private fun typingNames(): List<String> {
+    val members by Repo.members.collectAsState()
+    val me by Repo.me.collectAsState()
+    val now by produceState(Repo.now()) {
+        while (true) {
+            delay(1000); value = Repo.now()
+        }
+    }
+    return members.values.filter { it.id != me?.id && now - it.typing in -5_000..6_000 }.map { it.name }.sorted()
+}
+
+@Composable
+private fun TypingRow() {
+    val names = typingNames()
+    if (names.isNotEmpty()) TypingBubble(names, Modifier.padding(start = 4.dp))
+}
+
+/** "David is typing…" or "Samuel in a call", or null to show the normal subtitle. */
+@Composable
+private fun liveSubtitle(): String? {
+    val typing = typingNames()
+    if (typing.isNotEmpty()) return if (typing.size == 1) "${typing[0]} is typing…" else "${typing.joinToString(" & ")} are typing…"
+    val presence by CallManager.presence.collectAsState()
+    val active by CallManager.active.collectAsState()
+    val members by Repo.members.collectAsState()
+    val me by Repo.me.collectAsState()
+    val inCall = presence.filterKeys { it != active?.cid }.values.flatten().toSet().filter { it != me?.id }.mapNotNull { members[it]?.name }
+    if (inCall.isNotEmpty()) return inCall.sorted().joinToString(" & ") + " in a call"
+    return null
+}

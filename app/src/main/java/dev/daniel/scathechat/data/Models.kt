@@ -67,6 +67,7 @@ data class Member(
     val tag: String? = null, // Call of Duty gamertag
     val platform: String? = null,
     val title: String? = null,
+    val typing: Long = 0L, // server time of the last keystroke
 )
 
 enum class Conn { CONNECTING, ONLINE, OFFLINE, ERROR }
@@ -200,6 +201,8 @@ data class Msg(
         type == "event" && event != null -> eventPreview(event)
         type == "vote" -> "Voted on a time"
         type == "call" -> callPreview(data)
+        type == "loc" -> "📍 Location" + (data?.let { runCatching { JSONObject(it).optString("place") }.getOrNull() }?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: "")
+        type == "killcam" -> "📹 Killcam" + (data?.let { runCatching { JSONObject(it).optString("c") }.getOrNull() }?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: "")
         type == "cfg" -> "Changed group settings"
         else -> text ?: link?.url ?: ""
     }

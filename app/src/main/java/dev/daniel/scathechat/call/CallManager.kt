@@ -246,6 +246,7 @@ object CallManager {
 
     private fun begin(cid: String, video: Boolean, startedBy: String) {
         active.value = Active(cid, video, System.currentTimeMillis(), startedBy)
+        CallEffects.current.value = CallEffects.Effect.NONE
         muted.value = false
         cameraOn.value = video
         speaker.value = video
@@ -358,6 +359,7 @@ object CallManager {
         val cap = enumerator.createCapturer(name, null) ?: return
         val helper = SurfaceTextureHelper.create("scathe-capture", egl!!.eglBaseContext)
         val source = f.createVideoSource(false)
+        source.setVideoProcessor(CallEffects.Processor())
         cap.initialize(helper, ctx, source.capturerObserver)
         cap.startCapture(960, 540, 24)
         capturer = cap
