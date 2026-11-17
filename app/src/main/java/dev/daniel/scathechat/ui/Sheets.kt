@@ -175,6 +175,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
     var color by remember { mutableIntStateOf(me?.color ?: 0) }
     var bg by remember { mutableStateOf(Repo.prefs.background) }
     var confirmLeave by remember { mutableStateOf(false) }
+    var codSetup by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.Bar, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
             Text("Settings", style = fireText(22.sp, glow = 0.5f))
@@ -187,6 +188,15 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 Repo.updateMe(name, color)
                 Toast.makeText(ctx, "Saved", Toast.LENGTH_SHORT).show()
             }, enabled = name.isNotBlank()) { Text("Save name & color") }
+
+            Spacer(Modifier.height(18.dp)); HorizontalDivider(color = C.Field); Spacer(Modifier.height(14.dp))
+            Text("Call of Duty", color = C.Text, fontSize = 16.sp)
+            Text(
+                Repo.prefs.codTag?.let { "Gamertag: $it" } ?: "Add your gamertag so your stats show up in the Stats feed.",
+                color = C.Dim, fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            GlassButton(onClick = { codSetup = true }) { ButtonLabel("Gamertag & Activision sign-in", 15) }
 
             Spacer(Modifier.height(18.dp)); HorizontalDivider(color = C.Field); Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -228,6 +238,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
             TextButton(onClick = { confirmLeave = true }) { Text("Remove this group from this phone", color = C.Crimson) }
         }
     }
+    if (codSetup) CodSetupSheet { codSetup = false }
     if (confirmLeave) {
         AlertDialog(
             onDismissRequest = { confirmLeave = false },

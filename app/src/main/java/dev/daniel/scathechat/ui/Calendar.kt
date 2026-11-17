@@ -243,13 +243,10 @@ fun CalendarScreen(onClose: () -> Unit) {
                 Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(18.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                GlassButton(onClick = { create = "filth" }, shape = CircleShape, padding = PaddingValues(14.dp)) {
-                    Text("💀", fontSize = 22.sp)
-                }
-                FireButton(onClick = { create = "cod" }, shape = RoundedCornerShape(20.dp)) {
-                    Icon(Icons.Filled.Add, null)
-                    Spacer(Modifier.width(6.dp))
-                    ButtonLabel("CoD session")
+                FireButton(onClick = { create = "filth" }, shape = RoundedCornerShape(20.dp)) {
+                    Text("💀", fontSize = 18.sp)
+                    Spacer(Modifier.width(8.dp))
+                    ButtonLabel("Schedule a filthification")
                 }
             }
         }
@@ -266,16 +263,14 @@ private fun SectionLabel(text: String) {
 private fun CalendarEmpty(onPick: (String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 40.dp, start = 16.dp, end = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("📅", fontSize = 54.sp)
-        Text("Nothing on the calendar", style = fireText(24.sp))
+        Text("No filthifications scheduled", style = fireText(24.sp))
         Spacer(Modifier.height(6.dp))
         Text(
-            "Offer a few times and let everyone vote, or just set one. Each brother sees it in his own time zone.",
+            "Pick a day and time. Each brother sees it in his own time zone and gets a heads-up 15 minutes before.",
             color = C.Dim, fontSize = 14.sp, textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(22.dp))
-        FireButton(onClick = { onPick("cod") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { ButtonLabel("🎮  Pick a time for CoD") }
-        Spacer(Modifier.height(10.dp))
-        GlassButton(onClick = { onPick("filth") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { ButtonLabel("💀  Schedule a filthification") }
+        FireButton(onClick = { onPick("filth") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { ButtonLabel("💀  Schedule a filthification") }
     }
 }
 
@@ -500,8 +495,8 @@ private fun quickTimes(): List<Pair<String, Long>> {
 
 @Composable
 private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, myId: String, onDismiss: () -> Unit) {
-    var kind by remember { mutableStateOf(initialKind) }
-    var title by remember { mutableStateOf(kindName(initialKind)) }
+    val kind = "filth"
+    var title by remember { mutableStateOf(kindName(initialKind.takeIf { it == "filth" } ?: "filth")) }
     var titleEdited by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
     var dur by remember { mutableIntStateOf(120) }
@@ -514,22 +509,8 @@ private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, 
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().navigationBarsPadding()
                 .padding(horizontal = 20.dp).padding(bottom = 20.dp)
         ) {
-            Text("New event", style = fireText(22.sp, glow = 0.5f))
+            Text("💀 Schedule a filthification", style = fireText(22.sp, glow = 0.5f))
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("cod", "filth", "other").forEach { k ->
-                    FilterChip(
-                        selected = kind == k,
-                        onClick = {
-                            kind = k
-                            if (!titleEdited) title = kindName(k)
-                        },
-                        label = { Text(kindEmoji(k) + " " + kindName(k)) },
-                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = C.Mine, selectedLabelColor = Color.White),
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
             OutlinedTextField(
                 title, { title = it; titleEdited = true }, label = { Text("Name") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences), modifier = Modifier.fillMaxWidth(),
@@ -551,7 +532,7 @@ private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, 
             }
             Spacer(Modifier.height(14.dp))
             Text(
-                "Times (in your zone, ${ZonedDateTime.now().format(zoneFmt)}). Pick one to schedule it, or a few and let everyone vote.",
+                "When (your time, ${ZonedDateTime.now().format(zoneFmt)})",
                 color = C.Dim, fontSize = 13.sp,
             )
             Spacer(Modifier.height(6.dp))
@@ -559,7 +540,7 @@ private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, 
                 quickTimes().forEach { (label, t) ->
                     FilterChip(
                         selected = t in slots,
-                        onClick = { if (t in slots) slots.remove(t) else slots.add(t) },
+                        onClick = { slots.clear(); slots.add(t) },
                         label = { Text(label) },
                         colors = FilterChipDefaults.filterChipColors(selectedContainerColor = C.Mine, selectedLabelColor = Color.White),
                     )
@@ -583,7 +564,7 @@ private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, 
                 onClick = {
                     Repo.saveEvent(
                         EventInfo(
-                            eid = Crypto.hex(Crypto.random(8)), kind = kind, title = title.trim().ifBlank { kindName(kind) },
+                            eid = Crypto.hex(Crypto.random(8)), kind = "filth", title = title.trim().ifBlank { kindName(kind) },
                             note = note.trim().ifBlank { null }, slots = slots.sorted(), dur = dur, final = null,
                             cancelled = false, tz = null, act = "new",
                         )
@@ -593,13 +574,7 @@ private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, 
                 enabled = slots.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth().height(54.dp),
             ) {
-                ButtonLabel(
-                    when (slots.size) {
-                        0 -> "Pick at least one time"
-                        1 -> "Schedule it"
-                        else -> "Send time vote (${slots.size} options)"
-                    },
-                )
+                ButtonLabel(if (slots.isEmpty()) "Pick a time" else "Schedule it")
             }
         }
     }
@@ -633,7 +608,7 @@ private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, 
             confirmButton = {
                 TextButton(onClick = {
                     val t = at(date, ts.hour, ts.minute)
-                    if (t !in slots) slots.add(t)
+                    slots.clear(); slots.add(t)
                     pickTimeFor = null
                 }) { Text("Add time") }
             },

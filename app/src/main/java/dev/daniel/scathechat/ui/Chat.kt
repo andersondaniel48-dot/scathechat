@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package dev.daniel.scathechat.ui
 
@@ -100,6 +100,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -266,12 +269,18 @@ fun ChatScreen() {
 
     val others = members.values.filter { it.id != myId }
     val hazeState = remember { HazeState() }
+    val pager = rememberPagerState(pageCount = { 2 })
+    BackHandler(enabled = pager.currentPage == 1 && !showCalendar) { scope.launch { pager.animateScrollToPage(0) } }
     val density = LocalDensity.current
     var topH by remember { mutableIntStateOf(0) }
     var bottomH by remember { mutableIntStateOf(0) }
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().haze(hazeState)) {
             EmberBackground(Modifier.fillMaxSize())
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
+            if (page == 1) {
+                StatsPage(topPad = with(density) { topH.toDp() })
+            } else Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
                 reverseLayout = true,
@@ -323,6 +332,8 @@ fun ChatScreen() {
             if (state.messages.isEmpty() && conn != Conn.CONNECTING) {
                 EmptyState(onInvite = { sheet = Sheet.INVITE }, Modifier.align(Alignment.Center))
             }
+            }
+            }
         }
         Column(
             Modifier
@@ -352,6 +363,7 @@ fun ChatScreen() {
                     !e.info.cancelled && (e.info.isPoll || (s != null && s + e.info.dur * 60_000L > now))
                 },
             )
+            PageTabs(pager.currentPage) { p -> scope.launch { pager.animateScrollToPage(p) } }
             if (update != null) {
                 Row(
                     Modifier
@@ -367,7 +379,7 @@ fun ChatScreen() {
                 }
             }
         }
-        if (!atBottom) {
+        if (!atBottom && pager.currentPage == 0) {
             Box(
                 Modifier
                     .align(Alignment.BottomEnd)
@@ -378,7 +390,7 @@ fun ChatScreen() {
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Filled.KeyboardArrowDown, "Newest", tint = C.Bone) }
         }
-        Composer(
+        if (pager.currentPage == 0) Composer(
             hazeState = hazeState,
             modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { bottomH = it.height },
             replyTo = replyTo,
@@ -711,4 +723,22 @@ fun MemberDot(m: Member, size: Int = 36) {
 @Composable
 fun Pill(text: String) {
     GlassPill(text)
+}
+
+@Composable
+private fun PageTabs(current: Int, onSelect: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+        Row(Modifier.glass(RoundedCornerShape(50), fill = Color(0x40140A06), rim = 0.6f).padding(3.dp)) {
+            listOf("Chat", "Stats").forEachIndexed { i, label ->
+                val on = current == i
+                Text(
+                    label, color = if (on) Color.White else C.Smoke, fontFamily = Display, fontSize = 13.sp,
+                    modifier = Modifier
+                        .then(if (on) Modifier.molten(RoundedCornerShape(50)) else Modifier)
+                        .clickable { onSelect(i) }
+                        .padding(horizontal = 22.dp, vertical = 6.dp),
+                )
+            }
+        }
+    }
 }

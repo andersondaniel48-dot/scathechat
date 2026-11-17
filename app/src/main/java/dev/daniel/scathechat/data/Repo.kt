@@ -9,6 +9,7 @@ import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import dev.daniel.scathechat.media.MediaUtil
+import dev.daniel.scathechat.net.CodSync
 import dev.daniel.scathechat.net.LinkPreview
 import dev.daniel.scathechat.net.Rtdb
 import dev.daniel.scathechat.service.ChatService
@@ -82,6 +83,7 @@ object Repo {
     val group = MutableStateFlow<Group?>(null)
     val me = MutableStateFlow<Me?>(null)
     val chat = MutableStateFlow(ChatState())
+    val cod = MutableStateFlow(CodState())
     val members = MutableStateFlow<Map<String, Member>>(emptyMap())
     val conn = MutableStateFlow(Conn.CONNECTING)
     val connError = MutableStateFlow<String?>(null)
@@ -130,6 +132,7 @@ object Repo {
         if (group.value == null) me.value = null
         lastKey = prefs.lastKey
         lastReadSent = prefs.lastRead
+        CodSync.init()
         loaded = scope.launch {
             val msgs = db.all()
             synchronized(lock) { for (m in msgs) all[m.id] = m }
@@ -155,6 +158,7 @@ object Repo {
             loaded?.join()
             registerNetwork()
             connect()
+            CodSync.start()
             while (started) {
                 if (foreground) ping()
                 delay(45_000)
@@ -348,7 +352,8 @@ object Repo {
         val g = group.value ?: return
         for (m in fresh) {
             if (m.ts < now() - 10 * 60_000) continue
-            if (m.type == "vote") continue
+            if (m.type == "vote" || m.type == "codstats") continue
+            if (m.type == "cod") continue
             if (m.type == "react") {
                 val target = m.target?.let { chat.value.byId[it] } ?: continue
                 if (target.from != myId || m.emoji.isNullOrEmpty()) continue
@@ -404,9 +409,15 @@ object Repo {
             } catch (e: Exception) {
                 return@forEach
             }
-            out[id] = Member(id, prof.optString("n", "?"), prof.optInt("c", 0), o.str("r"), o.optLong("a", 0L), prof.str("z"))
+            out[id] = Member(
+                id, prof.optString("n", "?"), prof.optInt("c", 0), o.str("r"), o.optLong("a", 0L), prof.str("z"),
+                prof.str("gt"), prof.str("gp"), prof.str("gl"),
+            )
         }
-        me.value?.let { m -> if (m.id !in out) out[m.id] = Member(m.id, m.name, m.color, lastReadSent, now(), ZoneId.systemDefault().id) }
+        me.value?.let { m ->
+            if (m.id !in out) out[m.id] = Member(m.id, m.name, m.color, lastReadSent, now(), ZoneId.systemDefault().id,
+                prefs.codTag, prefs.codPlatform, prefs.codTitle)
+        }
         members.value = out
     }
 
@@ -416,7 +427,23 @@ object Repo {
         val list = ArrayList<Msg>(snapshot.size)
         val eventMsgs = HashMap<String, ArrayList<Msg>>()
         val votes = HashMap<String, HashMap<String, Msg>>() // eid -> member -> newest vote
+        val codMatches = ArrayList<CodMatch>()
+        val codSnaps = HashMap<String, HashMap<String, CodSnap>>()
         for (m in snapshot) {
+            if (m.type == "cod") {
+                m.data?.let { d -> runCatching { CodMatch.from(JSONObject(d)) }.getOrNull()?.let { codMatches.add(it) } }
+                continue
+            }
+            if (m.type == "codstats") {
+                m.data?.let { d ->
+                    runCatching { CodSnap.from(JSONObject(d)) }.getOrNull()?.let { s ->
+                        val per = codSnaps.getOrPut(s.member) { HashMap() }
+                        val prev = per[s.mode]
+                        if (prev == null || prev.at <= s.at) per[s.mode] = s
+                    }
+                }
+                continue
+            }
             if (m.type == "vote") {
                 val eid = m.target ?: continue
                 val per = votes.getOrPut(eid) { HashMap() }
@@ -450,7 +477,12 @@ object Repo {
             )
         }.sortedBy { it.info.start ?: it.info.slots.firstOrNull() ?: it.created }
         val old = chat.value.events
-        chat.value = ChatState(events, list, rmap, list.associateBy { it.id })
+        chat.value = ChatState(events, list, rmap, list.associateBy { it.id }, snapshot.mapTo(HashSet()) { it.id })
+        val feed = codMatches.groupBy { it.matchId }.map { (id, ps) ->
+            val sorted = ps.distinctBy { it.member }.sortedByDescending { it.kills }
+            CodFeedItem(id, sorted.first().mode, sorted.maxOf { it.start }, sorted)
+        }.sortedByDescending { it.start }
+        cod.value = CodState(feed, codSnaps, prefs.codLastSync)
         if (events != old) scope.launch { Reminders.sync(app, events, me.value?.id) }
     }
 
@@ -493,6 +525,24 @@ object Repo {
         val m = newMsg("react").copy(target = target.id, emoji = if (mine == emoji) "" else emoji)
         put(m)
         scope.launch { deliver(m) }
+    }
+
+    /** Posts a stats message. [id] is fixed for matches so the same match is never posted twice. */
+    fun postCod(type: String, id: String?, body: JSONObject) {
+        val myId = me.value?.id ?: return
+        val m = Msg(id = id ?: Crypto.hex(Crypto.random(12)), key = null, from = myId, ts = now(), type = type,
+            data = body.toString(), status = Msg.PENDING)
+        if (id != null && synchronized(lock) { all.containsKey(id) }) return
+        put(m)
+        scope.launch { deliver(m) }
+    }
+
+    fun saveCodSettings(tag: String?, platform: String?, title: String?) {
+        prefs.codTag = tag?.trim()?.ifBlank { null }
+        prefs.codPlatform = platform
+        prefs.codTitle = title?.trim()?.ifBlank { null }
+        pushProfile()
+        rebuildMembers()
     }
 
     fun saveEvent(info: EventInfo) {
@@ -693,8 +743,11 @@ object Repo {
         val m = me.value ?: return
         scope.launch {
             try {
-                val prof = JSONObject().put("n", m.name).put("c", m.color).put("z", ZoneId.systemDefault().id)
-                    .toString().toByteArray(Charsets.UTF_8)
+                val prof = JSONObject().put("n", m.name).put("c", m.color).put("z", ZoneId.systemDefault().id).apply {
+                    prefs.codTag?.let { put("gt", it) }
+                    prefs.codPlatform?.let { put("gp", it) }
+                    prefs.codTitle?.let { put("gl", it) }
+                }.toString().toByteArray(Charsets.UTF_8)
                 val box = Crypto.seal(g.key, prof, g.profileAad(m.id))
                 rtdb(g).put("rooms/${g.roomId}/s/${m.id}/p", JSONObject.quote(Crypto.b64(box)))
             } catch (e: Exception) {

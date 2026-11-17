@@ -57,7 +57,17 @@ class Group(val dbUrl: String, val secret: ByteArray, val name: String) {
 
 data class Me(val id: String, val name: String, val color: Int)
 
-data class Member(val id: String, val name: String, val color: Int, val read: String?, val active: Long, val tz: String? = null)
+data class Member(
+    val id: String,
+    val name: String,
+    val color: Int,
+    val read: String?,
+    val active: Long,
+    val tz: String? = null,
+    val tag: String? = null, // Call of Duty gamertag
+    val platform: String? = null,
+    val title: String? = null,
+)
 
 enum class Conn { CONNECTING, ONLINE, OFFLINE, ERROR }
 
@@ -161,6 +171,7 @@ data class Msg(
     val emoji: String? = null,
     val event: EventInfo? = null,
     val votes: Map<Long, String>? = null, // for type "vote": slot start -> y / m / n
+    val data: String? = null, // JSON body for "cod" (match) and "codstats" (career snapshot)
     val status: Int = SENT,
 ) {
     fun toPayload(): JSONObject = JSONObject().apply {
@@ -172,6 +183,7 @@ data class Msg(
         link?.let { put("l", it.toJson()) }
         media?.let { put("m", it.toJson()) }
         event?.let { put("ev", it.toJson()) }
+        data?.let { put("cd", it) }
         votes?.let { v -> put("vt", JSONObject().apply { v.forEach { (k, x) -> put(k.toString(), x) } }) }
     }
 
@@ -187,6 +199,8 @@ data class Msg(
         type == "react" -> "Reacted ${emoji ?: ""}"
         type == "event" && event != null -> eventPreview(event)
         type == "vote" -> "Voted on a time"
+        type == "cod" -> "Match result"
+        type == "codstats" -> "Stats update"
         else -> text ?: link?.url ?: ""
     }
 
@@ -208,6 +222,7 @@ data class Msg(
             target = o.str("tg"),
             emoji = if (o.has("e")) o.optString("e") else null,
             event = EventInfo.from(o.optJSONObject("ev")),
+            data = o.str("cd"),
             votes = o.optJSONObject("vt")?.let { v ->
                 val out = HashMap<Long, String>()
                 v.keys().forEach { k -> k.toLongOrNull()?.let { out[it] = v.optString(k) } }
@@ -248,4 +263,5 @@ data class ChatState(
     val messages: List<Msg> = emptyList(),
     val reactions: Map<String, Map<String, String>> = emptyMap(), // target id -> member id -> emoji
     val byId: Map<String, Msg> = emptyMap(),
+    val byIdAll: Set<String> = emptySet(),
 )
