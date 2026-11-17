@@ -1269,6 +1269,8 @@ fun DmzScreen(onClose: () -> Unit) {
     val webViews = remember { HashMap<String, android.webkit.WebView>() }
     var progress by remember { mutableIntStateOf(100) }
     val focus = LocalFocusManager.current
+    var capturing by remember { mutableStateOf(false) }
+    if (capturing) { DmzCaptureScreen(onDone = { capturing = false }); return }
 
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { webViews.values.forEach { it.destroy() }; webViews.clear() } }
     BackHandler {
@@ -1286,6 +1288,11 @@ fun DmzScreen(onClose: () -> Unit) {
             Text("DMZ", style = fireText(22.sp, glow = 0.6f))
             Spacer(Modifier.width(10.dp))
             Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "Send map data", color = C.Flame, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.glass(RoundedCornerShape(14.dp), fill = Color(0x30FF5A1F), rim = 0.6f)
+                        .clickable { capturing = true }.padding(horizontal = 12.dp, vertical = 7.dp),
+                )
                 (WEB_MAPS.map { it.id to it.label } + ("pins" to "Group pins")).forEach { (id, label) ->
                     val on = id == source
                     val shape = RoundedCornerShape(14.dp)
