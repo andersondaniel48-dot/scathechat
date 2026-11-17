@@ -219,6 +219,43 @@ private fun calOf(ctx: Context, map: String): FloatArray? =
 private fun saveCal(ctx: Context, map: String, cal: FloatArray?) =
     ctx.getSharedPreferences("dmz", 0).edit().putString("cal_$map", cal?.joinToString(",")).apply()
 
+private fun srcOf(ctx: Context, map: String): String? = ctx.getSharedPreferences("dmz", 0).getString("src_$map", null)
+private fun saveSrc(ctx: Context, map: String, src: String?) = ctx.getSharedPreferences("dmz", 0).edit().putString("src_$map", src).apply()
+
+/** Downloads a map image straight onto this phone. Returns null on success, else what went wrong. */
+private fun download(ctx: Context, map: String, url: String): String? = try {
+    val req = okhttp3.Request.Builder().url(url)
+        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Mobile Safari/537.36")
+        .header("Accept", "image/avif,image/webp,image/*,*/*;q=0.8")
+        .build()
+    Repo.http.newCall(req).execute().use { r ->
+        val body = r.body
+        when {
+            !r.isSuccessful -> "The site answered ${r.code}."
+            body == null -> "Empty download."
+            else -> {
+                val bytes = body.bytes()
+                val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
+                if (o.outWidth <= 0) "That link isn't an image."
+                else { imgFile(ctx, map).writeBytes(bytes); saveSrc(ctx, map, url); null }
+            }
+        }
+    }
+} catch (e: Exception) {
+    e.message ?: "Download failed."
+}
+
+/** The group's shared backgrounds: one person lines up the grid, everyone gets it. */
+private fun sharedMap(map: String): JSONObject? = Repo.groupConfig.value?.optJSONObject("maps")?.optJSONObject(map)
+private fun shareMap(map: String, url: String, cal: FloatArray) {
+    val next = JSONObject(Repo.groupConfig.value?.toString() ?: "{}")
+    val maps = next.optJSONObject("maps") ?: JSONObject()
+    maps.put(map, JSONObject().put("url", url).put("cal", cal.joinToString(",")))
+    next.put("maps", maps)
+    Repo.postData("cfg", next)
+}
+
 private fun loadBitmap(f: File): ImageBitmap? {
     if (!f.exists()) return null
     val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -263,6 +300,10 @@ fun DmzScreen(onClose: () -> Unit) {
     var imgVersion by remember { mutableIntStateOf(0) }
     var pendingFocus by remember { mutableStateOf<Offset?>(null) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var downloading by remember { mutableStateOf(false) }
+    var dlError by remember { mutableStateOf<String?>(null) }
+    var linkDialog by remember { mutableStateOf(false) }
+    val groupCfg by Repo.groupConfig.collectAsState()
 
     val cam = remember { Cam() }
     val anim = remember { Animatable(0f) }
@@ -273,6 +314,33 @@ fun DmzScreen(onClose: () -> Unit) {
         value = withContext(Dispatchers.IO) { loadBitmap(imgFile(ctx, mapId)) }
     }
     val cal = remember(mapId, imgVersion) { calOf(ctx, mapId) }
+
+    fun fetch(url: String, then: (Boolean) -> Unit = {}) {
+        val target = mapId
+        downloading = true
+        dlError = null
+        scope.launch {
+            val err = withContext(Dispatchers.IO) { download(ctx, target, url) }
+            downloading = false
+            if (err == null) imgVersion++ else dlError = err
+            then(err == null)
+        }
+    }
+
+    // someone lined up a map for the group: download it and use their alignment
+    LaunchedEffect(groupCfg, mapId) {
+        val shared = sharedMap(mapId) ?: return@LaunchedEffect
+        val url = shared.optString("url").takeIf { it.startsWith("http") } ?: return@LaunchedEffect
+        val sharedCal = shared.optString("cal").split(",").mapNotNull { it.toFloatOrNull() }.takeIf { it.size == 4 }?.toFloatArray()
+        val mine = srcOf(ctx, mapId)
+        if (mine == "local") return@LaunchedEffect // this phone uses its own screenshot
+        if (mine != url || !imgFile(ctx, mapId).exists()) {
+            val err = withContext(Dispatchers.IO) { download(ctx, mapId, url) }
+            if (err != null) return@LaunchedEffect
+        }
+        if (sharedCal != null && !sharedCal.contentEquals(calOf(ctx, mapId))) saveCal(ctx, mapId, sharedCal)
+        imgVersion++
+    }
 
     val mapSpots = remember(mapId) { Dmz.spots.filter { it.map == mapId } }
     val placed = remember(mapId) { place(map, mapSpots) }
@@ -524,25 +592,51 @@ fun DmzScreen(onClose: () -> Unit) {
     }
 
     if (imageSheet) MapImageSheet(
-        map = map, has = bitmap != null,
+        map = map, has = bitmap != null, downloading = downloading, error = dlError,
+        shared = sharedMap(mapId) != null,
         onDismiss = { imageSheet = false },
+        onDownload = {
+            val urls = map.sources
+            fun attempt(i: Int) {
+                if (i >= urls.size) return
+                fetch(urls[i]) { ok ->
+                    if (ok) { saveCal(ctx, mapId, null); imageSheet = false; aligning = true }
+                    else if (i + 1 < urls.size) attempt(i + 1)
+                    else dlError = "Couldn't download the ${map.short} map ($dlError). Screenshot your tac map in game, or paste a link to a map image."
+                }
+            }
+            attempt(0)
+        },
+        onLink = { linkDialog = true },
         onPicked = { uri ->
             scope.launch {
                 val ok = withContext(Dispatchers.IO) {
                     runCatching { ctx.contentResolver.openInputStream(uri)?.use { i -> imgFile(ctx, mapId).outputStream().use { i.copyTo(it) } } != null }.getOrDefault(false)
                 }
-                if (ok) { saveCal(ctx, mapId, null); imgVersion++; imageSheet = false; aligning = true }
+                if (ok) { saveSrc(ctx, mapId, "local"); saveCal(ctx, mapId, null); imgVersion++; imageSheet = false; aligning = true }
             }
         },
         onAlign = { imageSheet = false; aligning = true },
-        onRemove = { imgFile(ctx, mapId).delete(); saveCal(ctx, mapId, null); imgVersion++; imageSheet = false },
+        onRemove = { imgFile(ctx, mapId).delete(); saveCal(ctx, mapId, null); saveSrc(ctx, mapId, "none"); imgVersion++; imageSheet = false },
+    )
+
+    if (linkDialog) LinkDialog(
+        onDismiss = { linkDialog = false },
+        onGo = { url ->
+            linkDialog = false
+            fetch(url) { ok -> if (ok) { saveCal(ctx, mapId, null); imageSheet = false; aligning = true } }
+        },
     )
 
     if (aligning) bitmap?.let { bmp ->
         AlignScreen(
             bmp, map, cal ?: floatArrayOf(0f, 0f, 1f, 1f),
             onCancel = { aligning = false },
-            onSave = { saveCal(ctx, mapId, it); imgVersion++; aligning = false },
+            onSave = {
+                saveCal(ctx, mapId, it); imgVersion++; aligning = false
+                val src = srcOf(ctx, mapId)
+                if (src != null && src.startsWith("http")) shareMap(mapId, src, it)
+            },
         )
     }
 }
@@ -844,20 +938,33 @@ private fun NewPinDialog(grid: String, onDismiss: () -> Unit, onSave: (String, S
 }
 
 @Composable
-private fun MapImageSheet(map: Dmz.MapDef, has: Boolean, onDismiss: () -> Unit, onPicked: (Uri) -> Unit, onAlign: () -> Unit, onRemove: () -> Unit) {
+private fun MapImageSheet(
+    map: Dmz.MapDef, has: Boolean, downloading: Boolean, error: String?, shared: Boolean,
+    onDismiss: () -> Unit, onDownload: () -> Unit, onLink: () -> Unit, onPicked: (Uri) -> Unit, onAlign: () -> Unit, onRemove: () -> Unit,
+) {
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let(onPicked) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.Bar) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
             Text("${map.title} background", style = fireText(22.sp, glow = 0.5f))
             Spacer(Modifier.height(6.dp))
             Text(
-                "Put the real tac map under the markers: screenshot the map in game (or save a map image) and pick it here. " +
-                    "Then drag two corners so its grid lines up with ${'A'}${map.rowStart} to ${'A' + map.cols - 1}${map.rowStart + map.rows - 1}. " +
-                    "It stays on this phone.",
+                "Put the real tac map under the markers. Download it, then drag two corners so its grid lines up with " +
+                    "${'A'}${map.rowStart} to ${'A' + map.cols - 1}${map.rowStart + map.rows - 1}. " +
+                    "Once one of you lines it up, everyone's phone downloads it with the same alignment.",
                 color = C.Smoke, fontSize = 13.sp,
             )
+            if (shared) Text("Already lined up for the group.", color = C.Online, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(14.dp))
-            GlassButton(onClick = { pick.launch("image/*") }, modifier = Modifier.fillMaxWidth()) { ButtonLabel(if (has) "Pick a different image" else "Pick image", 15) }
+            if (map.sources.isNotEmpty()) {
+                FireButton(onClick = { if (!downloading) onDownload() }, modifier = Modifier.fillMaxWidth()) {
+                    ButtonLabel(if (downloading) "Downloading…" else if (has) "Download the map again" else "Download the ${map.short} map", 15)
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            error?.let { Text(it, color = Color(0xFFFFB4A0), fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp)) }
+            GlassButton(onClick = onLink, modifier = Modifier.fillMaxWidth()) { ButtonLabel("Paste an image link", 15) }
+            Spacer(Modifier.height(8.dp))
+            GlassButton(onClick = { pick.launch("image/*") }, modifier = Modifier.fillMaxWidth()) { ButtonLabel("Use a screenshot", 15) }
             if (has) {
                 Spacer(Modifier.height(8.dp))
                 GlassButton(onClick = onAlign, modifier = Modifier.fillMaxWidth()) { ButtonLabel("Line up the grid", 15) }
@@ -935,4 +1042,28 @@ private fun AlignScreen(bmp: ImageBitmap, map: Dmz.MapDef, initial: FloatArray, 
 private fun imageRect(bmp: ImageBitmap, box: IntSize): Pair<Offset, Float> {
     val s = min(box.width / bmp.width.toFloat(), box.height / bmp.height.toFloat())
     return Offset((box.width - bmp.width * s) / 2f, (box.height - bmp.height * s) / 2f) to s
+}
+
+@Composable
+private fun LinkDialog(onDismiss: () -> Unit, onGo: (String) -> Unit) {
+    var url by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF221610),
+        title = { Text("Image link", color = C.Bone, fontFamily = Display) },
+        text = {
+            Column {
+                Text("Long-press a map image in your browser, copy its link, and paste it here.", color = C.Smoke, fontSize = 13.sp)
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = url, onValueChange = { url = it.trim() }, singleLine = true,
+                    placeholder = { Text("https://…", color = C.Faint) },
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = C.Bone, unfocusedTextColor = C.Bone, focusedBorderColor = C.Ember, cursorColor = C.Ember),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { if (url.startsWith("http")) onGo(url) }) { Text("Download", color = C.Flame) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = C.Smoke) } },
+    )
 }

@@ -14,12 +14,20 @@ object Dmz {
 
     enum class Threat(val label: String) { LOW("Low"), MEDIUM("Medium"), HIGH("High"), CRITICAL("Critical"), EXTREME("Extreme"), NONE("") }
 
-    data class MapDef(val id: String, val title: String, val short: String, val cols: Int, val rows: Int, val rowStart: Int)
+    /** [sources]: map images (with the tac-map grid drawn on) that each phone downloads for itself. */
+    data class MapDef(val id: String, val title: String, val short: String, val cols: Int, val rows: Int, val rowStart: Int, val sources: List<String>)
 
     val maps = listOf(
-        MapDef("hajin", "Hajin", "Hajin", 10, 9, 1),
-        MapDef("x01_lower", "X01 · Lower floor (Deep Vault)", "X01 Lower", 10, 9, 0),
-        MapDef("x01_upper", "X01 · Upper floor (Cargo Bay)", "X01 Upper", 10, 9, 0),
+        MapDef("hajin", "Hajin", "Hajin", 10, 9, 1, listOf(
+            "https://codcentral.net/assets/library/mw4/dmz/map/hajin-map-1440.webp",
+            "https://codmunity.gg/dmz/hajin-map-cod2-1120.webp",
+        )),
+        MapDef("x01_lower", "X01 · Lower floor (Deep Vault)", "X01 Lower", 10, 9, 0, listOf(
+            "https://codcentral.net/assets/library/mw4/dmz/map/x01-floor-1-v4.webp",
+        )),
+        MapDef("x01_upper", "X01 · Upper floor (Cargo Bay)", "X01 Upper", 10, 9, 0, listOf(
+            "https://codcentral.net/assets/library/mw4/dmz/map/x01-floor-2-v4.webp",
+        )),
     )
     fun map(id: String) = maps.first { it.id == id }
 
@@ -130,7 +138,7 @@ object Dmz {
         for (g in listOf("F4", "G6", "G7", "G8", "I7")) add(s("hajin", "Hanex Bank Branch", Kind.BANK, g, "Bank branch", "Vault needs the Bank Branch Vault Access keycard."))
         add(s("hajin", "Black Market", Kind.MARKET, "B7", "Deadtown", "South Deadtown. Weapons locker in the basement back room."))
         add(s("hajin", "Black Market", Kind.MARKET, "C2", "Hanrim Village", "East Hanrim Village, far north-west. Weapons locker in the basement."))
-        add(s("hajin", "X01 entrance (approximate)", Kind.ENTRY, "B1", "North-west border", "Abandoned elevator shaft by the facility in north-west Hajin, on the North Korean border. Exact square not confirmed; check the X01 marker on your tac map. You can also deploy straight into X01 from Select Location."))
+        add(s("hajin", "X01 entrance", Kind.ENTRY, "B1", "North-west border", "Square B0 on the in-game tac map: just past the top edge here, straight north of the 14th Political Prison. An abandoned freight elevator; press the button by the gate and stay in the cage. You can also deploy straight into X01 from Select Location."))
 
         // ------------------------------------------------------------ X01 areas
         add(s(L, "Deep Vault", Kind.AREA, "C2", "X01 lower floor", "Round vault gate (Deep Vault keycards). Elevator down to three levels of keycard rooms. Blix may be here."))
