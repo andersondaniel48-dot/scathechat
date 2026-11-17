@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
@@ -82,6 +84,10 @@
             android:name=".service.CallService"
             android:exported="false"
             android:foregroundServiceType="microphone|camera" />
+
+        <receiver
+            android:name=".net.UpdateReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".service.CallActionReceiver"

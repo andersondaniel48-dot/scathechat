@@ -52,6 +52,10 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("asked_notif", false)
         set(v) = sp.edit().putBoolean("asked_notif", v).apply()
 
+    var autoUpdate: Boolean
+        get() = sp.getBoolean("auto_update", true)
+        set(v) = sp.edit().putBoolean("auto_update", v).apply()
+
     fun clear() = sp.edit().clear().apply()
 }
 

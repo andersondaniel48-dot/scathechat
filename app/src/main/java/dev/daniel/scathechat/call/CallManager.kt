@@ -94,6 +94,24 @@ object CallManager {
     private val earlyIce = HashMap<String, ArrayList<IceCandidate>>()
     private val handled = HashSet<String>()
     private var heartbeat: Job? = null
+    private var proximity: android.os.PowerManager.WakeLock? = null
+
+    /** Voice calls: screen goes dark and ignores touches when the phone is against your ear. */
+    private fun setProximity(on: Boolean) {
+        try {
+            if (on) {
+                if (proximity?.isHeld == true) return
+                val pm = ctx.getSystemService(android.os.PowerManager::class.java) ?: return
+                if (!pm.isWakeLockLevelSupported(android.os.PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) return
+                proximity = pm.newWakeLock(android.os.PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "scathe:call-proximity").also { it.acquire(4 * 3600_000L) }
+            } else {
+                proximity?.let { if (it.isHeld) it.release(android.os.PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY) }
+                proximity = null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "proximity", e)
+        }
+    }
     private var ringtone: Ringtone? = null
 
     private val ctx: Context get() = Repo.app
@@ -233,6 +251,7 @@ object CallManager {
         speaker.value = video
         minimized.value = false
         CallService.start(ctx, video)
+        setProximity(!video)
         exec.execute {
             try {
                 ensureFactory()
@@ -264,6 +283,7 @@ object CallManager {
         val a = active.value ?: return
         active.value = null
         heartbeat?.cancel()
+        setProximity(false)
         Repo.setPresence(null)
         val others = presence.value[a.cid].orEmpty() - myId
         if (others.isEmpty()) {
@@ -305,6 +325,7 @@ object CallManager {
 
     fun setSpeaker(on: Boolean) {
         speaker.value = on
+        if (active.value?.video == false) setProximity(!on)
         exec.execute { route(true, on) }
     }
 

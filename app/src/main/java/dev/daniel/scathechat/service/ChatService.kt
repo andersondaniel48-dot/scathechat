@@ -212,6 +212,25 @@ object Notifier {
 
     fun cancelIncomingCall(ctx: Context) = NotificationManagerCompat.from(ctx).cancel(INCOMING_ID)
 
+    fun updateReady(ctx: Context, confirm: Intent) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
+        val pi = PendingIntent.getActivity(ctx, 20, confirm, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = NotificationCompat.Builder(ctx, CH_MSG)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setColor(0xFFE5383B.toInt())
+            .setContentTitle("Scathe Chat update ready")
+            .setContentText("Tap to install the new version")
+            .setAutoCancel(true)
+            .setContentIntent(pi)
+            .build()
+        try {
+            NotificationManagerCompat.from(ctx).notify(5, n)
+        } catch (_: SecurityException) {
+        }
+    }
+
     fun ongoingCall(ctx: Context, video: Boolean): Notification {
         val hang = PendingIntent.getBroadcast(
             ctx, 13, Intent(ctx, CallActionReceiver::class.java).setAction("hangup"), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,

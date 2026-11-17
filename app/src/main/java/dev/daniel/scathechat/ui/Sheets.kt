@@ -228,6 +228,15 @@ fun SettingsSheet(onDismiss: () -> Unit) {
             )
             group?.let { Text("Server: ${it.dbUrl.removePrefix("https://")}", color = C.Faint, fontSize = 12.sp) }
             Spacer(Modifier.height(8.dp))
+            var auto by remember { mutableStateOf(Repo.prefs.autoUpdate) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Automatic updates", color = C.Text, fontSize = 16.sp)
+                    Text("Downloads new versions and installs them while you're not using the app.", color = C.Dim, fontSize = 13.sp)
+                }
+                Switch(checked = auto, onCheckedChange = { auto = it; Repo.prefs.autoUpdate = it }, colors = SwitchDefaults.colors(checkedTrackColor = C.Crimson))
+            }
+            Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = {
                 scope.launch {
                     val has = Updater.check(force = true)

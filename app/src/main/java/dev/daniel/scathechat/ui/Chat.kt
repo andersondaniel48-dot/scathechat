@@ -179,6 +179,7 @@ fun ChatScreen() {
     val showInvite by Repo.showInvite.collectAsState()
     val shares by Repo.pendingShare.collectAsState()
     val update by Updater.available.collectAsState()
+    val updState by Updater.state.collectAsState()
     val fg by Repo.fg.collectAsState()
     val myId = me?.id ?: return
 
@@ -395,13 +396,27 @@ fun ChatScreen() {
                     Modifier
                         .fillMaxWidth()
                         .molten(RoundedCornerShape(16.dp), alpha = 0.85f)
-                        .clickable { openUrl(ctx, update!!) }
+                        .clickable {
+                            when (updState) {
+                                "downloading", "installing" -> {}
+                                "ready" -> Updater.install(ctx)
+                                else -> scope.launch { Updater.download(ctx)?.let { Updater.install(ctx) } ?: openUrl(ctx, update!!) }
+                            }
+                        }
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Filled.SystemUpdate, null, tint = Color.White, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text("New version of Scathe Chat ready. Tap to download.", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        when (updState) {
+                            "downloading" -> "Downloading the new version…"
+                            "installing" -> "Installing the update…"
+                            "ready" -> "Update downloaded. Tap to install now."
+                            else -> "New version of Scathe Chat ready. Tap to update."
+                        },
+                        color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
         }

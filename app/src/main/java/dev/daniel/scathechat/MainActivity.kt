@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
             setTurnScreenOn(false)
         }
         Repo.foreground = false
+        dev.daniel.scathechat.net.Updater.onBackground(this)
         super.onStop()
     }
 
