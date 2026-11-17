@@ -3,3 +3,5 @@
 -dontwarn org.openjsse.**
 -dontwarn org.jetbrains.annotations.**
 -keep class com.journeyapps.barcodescanner.** { *; }
+-keep class org.webrtc.** { *; }
+-dontwarn org.webrtc.**

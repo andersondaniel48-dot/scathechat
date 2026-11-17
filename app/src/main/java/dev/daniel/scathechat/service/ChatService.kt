@@ -70,6 +70,12 @@ object Notifier {
     private const val CH_SVC = "connection"
     private const val MSG_ID = 1
     const val SERVICE_ID = 2
+    const val CALL_ID = 3
+    private const val INCOMING_ID = 4
+    private const val CH_CALL = "calls"
+    private const val CH_INCALL = "in_call"
+    const val ACTION_ANSWER = "dev.daniel.scathechat.ANSWER"
+    const val ACTION_INCOMING = "dev.daniel.scathechat.INCOMING"
 
     private val recent = ArrayList<Pair<String, String>>()
 
@@ -78,6 +84,14 @@ object Notifier {
         nm.createNotificationChannel(NotificationChannel(CH_MSG, "Messages", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "New messages from the group"
             enableVibration(true)
+        })
+        nm.createNotificationChannel(NotificationChannel(CH_CALL, "Incoming calls", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "Rings when a brother calls"
+            setSound(null, null) // the app plays the ringtone itself
+            enableVibration(false)
+        })
+        nm.createNotificationChannel(NotificationChannel(CH_INCALL, "Ongoing call", NotificationManager.IMPORTANCE_LOW).apply {
+            setShowBadge(false)
         })
         nm.createNotificationChannel(NotificationChannel(CH_SVC, "Background connection", NotificationManager.IMPORTANCE_MIN).apply {
             description = "Shown while Scathe Chat stays connected for instant messages. You can hide this one."
@@ -159,6 +173,59 @@ object Notifier {
             NotificationManagerCompat.from(ctx).notify(id, n)
         } catch (_: SecurityException) {
         }
+    }
+
+    fun incomingCall(ctx: Context, name: String, video: Boolean) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
+        val full = PendingIntent.getActivity(
+            ctx, 10, Intent(ctx, MainActivity::class.java).setAction(ACTION_INCOMING).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val answer = PendingIntent.getActivity(
+            ctx, 11, Intent(ctx, MainActivity::class.java).setAction(ACTION_ANSWER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val decline = PendingIntent.getBroadcast(
+            ctx, 12, Intent(ctx, CallActionReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val n = NotificationCompat.Builder(ctx, CH_CALL)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setColor(0xFFE5383B.toInt())
+            .setContentTitle(name)
+            .setContentText(if (video) "Incoming video call" else "Incoming voice call")
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setOngoing(true)
+            .setTimeoutAfter(45_000)
+            .setFullScreenIntent(full, true)
+            .setContentIntent(full)
+            .addAction(0, "Decline", decline)
+            .addAction(0, "Answer", answer)
+            .build()
+        try {
+            NotificationManagerCompat.from(ctx).notify(INCOMING_ID, n)
+        } catch (_: SecurityException) {
+        }
+    }
+
+    fun cancelIncomingCall(ctx: Context) = NotificationManagerCompat.from(ctx).cancel(INCOMING_ID)
+
+    fun ongoingCall(ctx: Context, video: Boolean): Notification {
+        val hang = PendingIntent.getBroadcast(
+            ctx, 13, Intent(ctx, CallActionReceiver::class.java).setAction("hangup"), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return NotificationCompat.Builder(ctx, CH_INCALL)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle(if (video) "Video call" else "Voice call")
+            .setContentText("Tap to return to the call")
+            .setOngoing(true)
+            .setSilent(true)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setContentIntent(openApp(ctx))
+            .addAction(0, "Hang up", hang)
+            .build()
     }
 
     fun clear(ctx: Context) {

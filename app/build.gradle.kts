@@ -18,6 +18,8 @@ android {
         versionCode = build
         versionName = "1.$build"
         buildConfigField("String", "UPDATE_REPO", "\"andersondaniel48-dot/scathechat\"")
+        // Phones only: keeps the WebRTC native library from tripling the download size.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     // One fixed key so each new APK updates the app in place instead of needing a reinstall.
@@ -70,6 +72,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
     implementation("dev.chrisbanes.haze:haze:1.1.1")
+    implementation("io.getstream:stream-webrtc-android:1.3.9")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-gif:2.7.0")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")

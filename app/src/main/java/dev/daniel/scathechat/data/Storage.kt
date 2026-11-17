@@ -52,34 +52,6 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("asked_notif", false)
         set(v) = sp.edit().putBoolean("asked_notif", v).apply()
 
-    // ---- Call of Duty (this phone only; the Activision session never leaves the phone)
-    var codCookie: String?
-        get() = sp.getString("cod_cookie", null)?.let { runCatching { String(Vault.unwrap(it)) }.getOrNull() }
-        set(v) = sp.edit().putString("cod_cookie", v?.let { Vault.wrap(it.toByteArray()) }).apply()
-
-    var codUserAgent: String?
-        get() = sp.getString("cod_ua", null)
-        set(v) = sp.edit().putString("cod_ua", v).apply()
-
-    var codTag: String?
-        get() = sp.getString("cod_tag", null)
-        set(v) = sp.edit().putString("cod_tag", v).apply()
-
-    var codPlatform: String?
-        get() = sp.getString("cod_platform", null)
-        set(v) = sp.edit().putString("cod_platform", v).apply()
-
-    var codTitle: String?
-        get() = sp.getString("cod_title", null)
-        set(v) = sp.edit().putString("cod_title", v).apply()
-
-    var codLastSync: Long
-        get() = sp.getLong("cod_last", 0L)
-        set(v) = sp.edit().putLong("cod_last", v).apply()
-
-    fun modeCode(mode: String): String? = sp.getString("cod_code_$mode", null)
-    fun setModeCode(mode: String, code: String) = sp.edit().putString("cod_code_$mode", code).apply()
-
     fun clear() = sp.edit().clear().apply()
 }
 

@@ -100,9 +100,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Videocam
+import dev.daniel.scathechat.call.CallManager
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -269,18 +269,30 @@ fun ChatScreen() {
 
     val others = members.values.filter { it.id != myId }
     val hazeState = remember { HazeState() }
-    val pager = rememberPagerState(pageCount = { 2 })
-    BackHandler(enabled = pager.currentPage == 1 && !showCalendar) { scope.launch { pager.animateScrollToPage(0) } }
+    val callActive by CallManager.active.collectAsState()
+    val callMin by CallManager.minimized.collectAsState()
+    var pendingCall by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val callPerms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
+        if (res.values.all { it }) pendingCall?.invoke()
+        else Toast.makeText(ctx, "Calls need the microphone (and camera for video)", Toast.LENGTH_SHORT).show()
+        pendingCall = null
+    }
+    fun withCallPermissions(video: Boolean, action: () -> Unit) {
+        val needed = buildList {
+            add(Manifest.permission.RECORD_AUDIO)
+            if (video) add(Manifest.permission.CAMERA)
+        }.filter { ContextCompat.checkSelfPermission(ctx, it) != PackageManager.PERMISSION_GRANTED }
+        if (needed.isEmpty()) action() else {
+            pendingCall = action
+            callPerms.launch(needed.toTypedArray())
+        }
+    }
     val density = LocalDensity.current
     var topH by remember { mutableIntStateOf(0) }
     var bottomH by remember { mutableIntStateOf(0) }
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().haze(hazeState)) {
             EmberBackground(Modifier.fillMaxSize())
-            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
-            if (page == 1) {
-                StatsPage(topPad = with(density) { topH.toDp() })
-            } else Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
                 reverseLayout = true,
@@ -296,6 +308,8 @@ fun ChatScreen() {
                         is Row.Day -> DayChip(row.label)
                         is Row.Bubble -> if (row.m.type == "event") {
                             EventChatCard(row.m, members, myId) { showCalendar = true }
+                        } else if (row.m.type == "call") {
+                            CallChatCard(row.m, members, myId) { cid, video, by -> withCallPermissions(video) { CallManager.join(cid, video, by) } }
                         } else {
                             val m = row.m
                             val mine = m.from == myId
@@ -332,8 +346,6 @@ fun ChatScreen() {
             if (state.messages.isEmpty() && conn != Conn.CONNECTING) {
                 EmptyState(onInvite = { sheet = Sheet.INVITE }, Modifier.align(Alignment.Center))
             }
-            }
-            }
         }
         Column(
             Modifier
@@ -358,12 +370,26 @@ fun ChatScreen() {
                 onInvite = { sheet = Sheet.INVITE },
                 onSettings = { sheet = Sheet.SETTINGS },
                 onCalendar = { showCalendar = true },
+                onCall = { video -> withCallPermissions(video) { CallManager.start(video) } },
                 upcoming = state.events.count { e ->
                     val s = e.info.start
                     !e.info.cancelled && (e.info.isPoll || (s != null && s + e.info.dur * 60_000L > now))
                 },
             )
-            PageTabs(pager.currentPage) { p -> scope.launch { pager.animateScrollToPage(p) } }
+            if (callActive != null && callMin) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .molten(RoundedCornerShape(16.dp), alpha = 0.85f)
+                        .clickable { CallManager.minimized.value = false }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(if (callActive!!.video) Icons.Filled.Videocam else Icons.Filled.Call, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("In a call. Tap to return.", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
             if (update != null) {
                 Row(
                     Modifier
@@ -379,7 +405,7 @@ fun ChatScreen() {
                 }
             }
         }
-        if (!atBottom && pager.currentPage == 0) {
+        if (!atBottom) {
             Box(
                 Modifier
                     .align(Alignment.BottomEnd)
@@ -390,7 +416,7 @@ fun ChatScreen() {
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Filled.KeyboardArrowDown, "Newest", tint = C.Bone) }
         }
-        if (pager.currentPage == 0) Composer(
+        Composer(
             hazeState = hazeState,
             modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { bottomH = it.height },
             replyTo = replyTo,
@@ -410,6 +436,7 @@ fun ChatScreen() {
     }
 
     if (showCalendar) CalendarScreen(onClose = { showCalendar = false })
+    CallOverlay(acceptWithPermissions = { video, action -> withCallPermissions(video, action) })
 
     actionsFor?.let { m ->
         ActionsSheet(
@@ -510,9 +537,11 @@ private fun TopBar(
     onInvite: () -> Unit,
     onSettings: () -> Unit,
     onCalendar: () -> Unit,
+    onCall: (Boolean) -> Unit,
     upcoming: Int,
 ) {
     var menu by remember { mutableStateOf(false) }
+    var callMenu by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(24.dp)
     Row(
         Modifier
@@ -536,6 +565,13 @@ private fun TopBar(
                     Spacer(Modifier.width(5.dp))
                 }
                 Text(subtitle, color = if (subtitleAlert) Color(0xFFFFB4A0) else C.Smoke, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Box {
+            IconButton(onClick = { callMenu = true }) { Icon(Icons.Filled.Call, "Call", tint = C.Bone) }
+            DropdownMenu(expanded = callMenu, onDismissRequest = { callMenu = false }, containerColor = Color(0xFF221610)) {
+                DropdownMenuItem(text = { Text("Voice call") }, leadingIcon = { Icon(Icons.Filled.Call, null) }, onClick = { callMenu = false; onCall(false) })
+                DropdownMenuItem(text = { Text("Video call") }, leadingIcon = { Icon(Icons.Filled.Videocam, null) }, onClick = { callMenu = false; onCall(true) })
             }
         }
         IconButton(onClick = onCalendar) {
@@ -725,20 +761,3 @@ fun Pill(text: String) {
     GlassPill(text)
 }
 
-@Composable
-private fun PageTabs(current: Int, onSelect: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-        Row(Modifier.glass(RoundedCornerShape(50), fill = Color(0x40140A06), rim = 0.6f).padding(3.dp)) {
-            listOf("Chat", "Stats").forEachIndexed { i, label ->
-                val on = current == i
-                Text(
-                    label, color = if (on) Color.White else C.Smoke, fontFamily = Display, fontSize = 13.sp,
-                    modifier = Modifier
-                        .then(if (on) Modifier.molten(RoundedCornerShape(50)) else Modifier)
-                        .clickable { onSelect(i) }
-                        .padding(horizontal = 22.dp, vertical = 6.dp),
-                )
-            }
-        }
-    }
-}

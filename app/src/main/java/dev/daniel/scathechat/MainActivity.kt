@@ -7,7 +7,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.content.IntentCompat
+import android.os.Build
+import dev.daniel.scathechat.call.CallManager
 import dev.daniel.scathechat.data.Repo
+import dev.daniel.scathechat.service.Notifier
 import dev.daniel.scathechat.service.ChatService
 import dev.daniel.scathechat.ui.AppRoot
 import dev.daniel.scathechat.ui.ScatheTheme
@@ -33,6 +36,10 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        if (Build.VERSION.SDK_INT >= 27 && CallManager.incoming.value == null && CallManager.active.value == null) {
+            setShowWhenLocked(false)
+            setTurnScreenOn(false)
+        }
         Repo.foreground = false
         super.onStop()
     }
@@ -40,6 +47,13 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(i: Intent?) {
         i ?: return
         when (i.action) {
+            Notifier.ACTION_INCOMING, Notifier.ACTION_ANSWER -> {
+                if (Build.VERSION.SDK_INT >= 27) {
+                    setShowWhenLocked(true)
+                    setTurnScreenOn(true)
+                }
+                if (i.action == Notifier.ACTION_ANSWER) CallManager.answerRequested.value = true
+            }
             Intent.ACTION_VIEW -> i.data?.toString()?.let { Repo.pendingInvite.value = it }
             Intent.ACTION_SEND -> {
                 val text = i.getStringExtra(Intent.EXTRA_TEXT)

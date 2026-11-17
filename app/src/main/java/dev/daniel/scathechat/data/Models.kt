@@ -199,8 +199,8 @@ data class Msg(
         type == "react" -> "Reacted ${emoji ?: ""}"
         type == "event" && event != null -> eventPreview(event)
         type == "vote" -> "Voted on a time"
-        type == "cod" -> "Match result"
-        type == "codstats" -> "Stats update"
+        type == "call" -> callPreview(data)
+        type == "cfg" -> "Changed group settings"
         else -> text ?: link?.url ?: ""
     }
 
@@ -232,6 +232,12 @@ data class Msg(
 
         fun fromStore(o: JSONObject): Msg = fromPayload(o, o.str("k"), o.optLong("t")).copy(status = o.optInt("st", SENT))
     }
+}
+
+fun callPreview(data: String?): String {
+    val o = data?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return "Call"
+    val kind = if (o.optBoolean("v")) "video call" else "voice call"
+    return if (o.optString("a") == "end") "Call ended" else "Started a $kind"
 }
 
 fun kindEmoji(kind: String): String = when (kind) {

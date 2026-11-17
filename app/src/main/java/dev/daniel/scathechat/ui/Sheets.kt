@@ -190,13 +190,14 @@ fun SettingsSheet(onDismiss: () -> Unit) {
             }, enabled = name.isNotBlank()) { Text("Save name & color") }
 
             Spacer(Modifier.height(18.dp)); HorizontalDivider(color = C.Field); Spacer(Modifier.height(14.dp))
-            Text("Call of Duty", color = C.Text, fontSize = 16.sp)
+            Text("Calls", color = C.Text, fontSize = 16.sp)
             Text(
-                Repo.prefs.codTag?.let { "Gamertag: $it" } ?: "Add your gamertag so your stats show up in the Stats feed.",
+                if (Repo.groupConfig.value?.optJSONObject("turn") != null) "Relay server set for the whole group."
+                else "Calls connect directly. If calls between phones on cellular data won't connect, add a free relay server.",
                 color = C.Dim, fontSize = 13.sp,
             )
             Spacer(Modifier.height(8.dp))
-            GlassButton(onClick = { codSetup = true }) { ButtonLabel("Gamertag & Activision sign-in", 15) }
+            GlassButton(onClick = { codSetup = true }) { ButtonLabel("Relay server", 15) }
 
             Spacer(Modifier.height(18.dp)); HorizontalDivider(color = C.Field); Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -238,7 +239,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
             TextButton(onClick = { confirmLeave = true }) { Text("Remove this group from this phone", color = C.Crimson) }
         }
     }
-    if (codSetup) CodSetupSheet { codSetup = false }
+    if (codSetup) RelaySheet { codSetup = false }
     if (confirmLeave) {
         AlertDialog(
             onDismissRequest = { confirmLeave = false },
