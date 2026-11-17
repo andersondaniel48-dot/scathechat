@@ -707,9 +707,15 @@ object Repo {
     suspend fun checkDb(g: Group, strict: Boolean): String? = withContext(Dispatchers.IO) {
         try {
             val rt = rtdb(g)
-            val (rootCode, _) = rt.raw("", mapOf("shallow" to "true"))
+            val (rootCode, rootBody) = rt.raw("", mapOf("shallow" to "true"))
+            // Firebase always answers in JSON (data, null, or {"error": …}); a web page means a wrong address.
+            val isJson = rootBody.trim().let { it == "null" || it.startsWith("{") }
+            if (!isJson) {
+                return@withContext "${g.dbUrl} isn't a Firebase database address. In Firebase → Realtime Database → Data, " +
+                    "copy the link at the top (it ends in firebaseio.com or firebasedatabase.app)."
+            }
             if (rootCode == 200 && strict) {
-                return@withContext "Your database is open to anyone (Firebase \"test mode\"). Paste the Scathe Chat rules " +
+                return@withContext "${g.dbUrl} is open to anyone (Firebase \"test mode\"). Paste the Scathe Chat rules " +
                     "in Firebase → Realtime Database → Rules, tap Publish, then try again."
             }
             val (code, body) = rt.raw("rooms/${g.roomId}/s", mapOf("shallow" to "true"))

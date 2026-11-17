@@ -11,6 +11,14 @@ fun normalizeDbUrl(input: String): String? {
     if (!t.startsWith("http://") && !t.startsWith("https://")) t = "https://$t"
     val u = t.toHttpUrlOrNull() ?: return null
     if (u.scheme != "https" || !u.host.contains('.')) return null
+    // Pasted the Firebase console page instead? Pull the database name out of it:
+    // console.firebase.google.com/project/<p>/database/<instance>/data
+    if (u.host == "console.firebase.google.com") {
+        val segs = u.pathSegments
+        val i = segs.indexOf("database")
+        val inst = segs.getOrNull(i + 1)?.takeIf { i >= 0 && it.isNotBlank() && it != "data" } ?: return null
+        return if (inst.contains('.')) "https://$inst" else "https://$inst.firebaseio.com"
+    }
     return "https://${u.host}"
 }
 
