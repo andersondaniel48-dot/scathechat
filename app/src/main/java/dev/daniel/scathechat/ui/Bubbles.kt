@@ -102,7 +102,6 @@ fun MessageRow(
     onOpenMedia: () -> Unit,
     onReact: (String) -> Unit,
 ) {
-    val bubbleColor = if (mine) C.Mine else C.Other
     val big = 18.dp
     val small = 5.dp
     val shape = if (mine) {
@@ -123,8 +122,9 @@ fun MessageRow(
                 sender?.name ?: "Unknown",
                 color = C.member(sender?.color ?: 0),
                 fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(start = 12.dp, bottom = 2.dp),
+                fontFamily = Display,
+                letterSpacing = 0.5.sp,
+                modifier = Modifier.padding(start = 12.dp, bottom = 3.dp),
             )
         }
         val clickMod = Modifier.combinedClickable(
@@ -140,8 +140,7 @@ fun MessageRow(
             Box(
                 Modifier
                     .widthIn(max = 300.dp)
-                    .clip(shape)
-                    .background(bubbleColor)
+                    .then(if (mine) Modifier.molten(shape) else Modifier.glass(shape))
                     .then(clickMod)
             ) {
                 Column {
@@ -150,7 +149,7 @@ fun MessageRow(
                     m.link?.let { LinkCard(it, mine) }
                     val hasText = !m.text.isNullOrBlank()
                     Column(Modifier.padding(start = 12.dp, end = 10.dp, top = if (hasText) 7.dp else 2.dp, bottom = 6.dp)) {
-                        if (hasText) LinkText(m.text!!, C.Text, if (mine) Color.White else Color(0xFF8AB4F8))
+                        if (hasText) LinkText(m.text!!, if (mine) Color.White else C.Bone, if (mine) Color.White else C.Flame)
                         Meta(m, mine, readByAll, onDark = true, modifier = Modifier.align(Alignment.End))
                     }
                 }
@@ -165,15 +164,16 @@ fun MessageRow(
                     val minePicked = who.any { it.key == myId }
                     Row(
                         Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (minePicked) Color(0xFF4A1C20) else C.Field)
-                            .border(1.dp, if (minePicked) C.Crimson else Color.Transparent, RoundedCornerShape(12.dp))
+                            .then(
+                                if (minePicked) Modifier.molten(RoundedCornerShape(12.dp), alpha = 0.7f)
+                                else Modifier.glass(RoundedCornerShape(12.dp), fill = Color(0x33140A06), rim = 0.6f)
+                            )
                             .clickable { onReact(emoji) }
                             .padding(horizontal = 7.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(emoji, fontSize = 14.sp)
-                        if (who.size > 1) Text(" ${who.size}", color = C.Dim, fontSize = 12.sp)
+                        if (who.size > 1) Text(" ${who.size}", color = if (minePicked) Color.White else C.Dim, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

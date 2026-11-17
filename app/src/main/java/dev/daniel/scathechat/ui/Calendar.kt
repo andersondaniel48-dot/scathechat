@@ -202,16 +202,18 @@ fun CalendarScreen(onClose: () -> Unit) {
     val past = state.events.filter { it !in polls && it !in upcoming }
         .sortedByDescending { it.info.start ?: it.created }.take(15)
 
-    Box(Modifier.fillMaxSize().background(C.Bg)) {
+    Box(Modifier.fillMaxSize()) {
+        EmberBackground(Modifier.fillMaxSize(), intensity = 0.9f)
         Column(Modifier.fillMaxSize()) {
             Row(
-                Modifier.fillMaxWidth().background(C.Bar).statusBarsPadding().height(62.dp).padding(horizontal = 4.dp),
+                Modifier.fillMaxWidth().statusBarsPadding().padding(start = 10.dp, end = 10.dp, top = 6.dp)
+                    .height(62.dp).glass(RoundedCornerShape(24.dp), fill = Color(0x40140A06)).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = C.Text) }
+                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = C.Bone) }
                 Column(Modifier.weight(1f)) {
-                    Text("Scathe Calendar", color = C.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text("Times shown in your zone · ${ZonedDateTime.now().format(zoneFmt)}", color = C.Dim, fontSize = 12.sp)
+                    Text("Scathe Calendar", style = fireText(19.sp, glow = 0.5f))
+                    Text("Times in your zone (${ZonedDateTime.now().format(zoneFmt)})", color = C.Smoke, fontSize = 12.sp)
                 }
             }
             LazyColumn(
@@ -241,15 +243,13 @@ fun CalendarScreen(onClose: () -> Unit) {
                 Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(18.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                FloatingActionButton(onClick = { create = "filth" }, containerColor = C.Field, contentColor = C.Text) {
+                GlassButton(onClick = { create = "filth" }, shape = CircleShape, padding = PaddingValues(14.dp)) {
                     Text("💀", fontSize = 22.sp)
                 }
-                FloatingActionButton(onClick = { create = "cod" }, containerColor = C.Crimson, contentColor = Color.White) {
-                    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Add, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("CoD session", fontWeight = FontWeight.SemiBold)
-                    }
+                FireButton(onClick = { create = "cod" }, shape = RoundedCornerShape(20.dp)) {
+                    Icon(Icons.Filled.Add, null)
+                    Spacer(Modifier.width(6.dp))
+                    ButtonLabel("CoD session")
                 }
             }
         }
@@ -259,27 +259,23 @@ fun CalendarScreen(onClose: () -> Unit) {
 
 @Composable
 private fun SectionLabel(text: String) {
-    Text(text, color = C.Dim, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+    Text(text, color = C.Flame.copy(alpha = 0.85f), fontFamily = Display, fontSize = 13.sp, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 6.dp, top = 8.dp))
 }
 
 @Composable
 private fun CalendarEmpty(onPick: (String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 40.dp, start = 16.dp, end = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("📅", fontSize = 54.sp)
-        Text("Nothing on the calendar", color = C.Text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+        Text("Nothing on the calendar", style = fireText(24.sp))
         Spacer(Modifier.height(6.dp))
         Text(
             "Offer a few times and let everyone vote, or just set one. Each brother sees it in his own time zone.",
             color = C.Dim, fontSize = 14.sp, textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(22.dp))
-        Button(onClick = { onPick("cod") }, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)) {
-            Text("🎮  Pick a time for CoD", fontSize = 16.sp)
-        }
+        FireButton(onClick = { onPick("cod") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { ButtonLabel("🎮  Pick a time for CoD") }
         Spacer(Modifier.height(10.dp))
-        OutlinedButton(onClick = { onPick("filth") }, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)) {
-            Text("💀  Schedule a filthification", fontSize = 16.sp, color = C.Text)
-        }
+        GlassButton(onClick = { onPick("filth") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { ButtonLabel("💀  Schedule a filthification") }
     }
 }
 
@@ -291,17 +287,15 @@ private fun CardShell(e: CalEvent, members: Map<String, Member>, highlight: Bool
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(C.Bar)
-            .border(1.dp, if (highlight) C.Crimson else C.Field, RoundedCornerShape(18.dp))
+            .glass(RoundedCornerShape(22.dp), fill = Color(0x38140A06), rim = if (highlight) 1.6f else 1f)
             .padding(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(C.Field), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(44.dp).glass(RoundedCornerShape(14.dp), fill = Color(0x22FFFFFF)), contentAlignment = Alignment.Center) {
                 Text(kindEmoji(e.info.kind), fontSize = 22.sp)
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text(e.info.title, color = C.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(e.info.title, color = C.Bone, fontFamily = Display, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     kindName(e.info.kind) + " · by " + (members[e.creator]?.name ?: "someone") + " · " + (if (e.info.dur % 60 == 0) "${e.info.dur / 60}h" else "${e.info.dur}m"),
                     color = C.Dim, fontSize = 12.sp,
@@ -349,7 +343,7 @@ private fun VoteButtons(current: String?, onVote: (String) -> Unit, labels: Trip
             Box(
                 Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .background(if (on) voteColor(v) else C.Field)
+                    .then(if (on) Modifier.background(voteColor(v)) else Modifier.glass(RoundedCornerShape(10.dp), fill = Color(0x1FFFFFFF), rim = 0.5f))
                     .clickable { onVote(if (on) "" else v) }
                     .padding(horizontal = 12.dp, vertical = 7.dp),
                 contentAlignment = Alignment.Center,
@@ -392,8 +386,8 @@ private fun PollCard(e: CalEvent, members: Map<String, Member>, myId: String, no
                     .padding(top = 10.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(if (isBest) Color(0xFF2A1416) else C.Bg)
-                    .border(1.dp, if (isBest) C.Crimson else Color.Transparent, RoundedCornerShape(14.dp))
+                    .background(if (isBest) C.Ember.copy(alpha = 0.16f) else Color(0x40000000))
+                    .border(1.dp, if (isBest) C.Ember else Color(0x14FFFFFF), RoundedCornerShape(14.dp))
                     .padding(12.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -431,11 +425,8 @@ private fun ScheduledCard(e: CalEvent, members: Map<String, Member>, myId: Strin
     val live = rel == "LIVE NOW"
     CardShell(e, members, highlight = live) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(localDateTime(start), color = C.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Text(
-                rel, color = if (live) Color.White else C.Text, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (live) C.Crimson else C.Field).padding(horizontal = 8.dp, vertical = 3.dp),
-            )
+            Text(localDateTime(start), style = fireText(19.sp, glow = 0.4f), modifier = Modifier.weight(1f))
+            GlassPill(rel, hot = live)
         }
         othersTimes(start, members, myId)?.let { Text(it, color = C.Dim, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp)) }
         Spacer(Modifier.height(12.dp))
@@ -449,7 +440,7 @@ private fun ScheduledCard(e: CalEvent, members: Map<String, Member>, myId: Strin
             members.values.sortedBy { it.name.lowercase() }.forEach { m ->
                 val v = e.votes[m.id]?.get(start)
                 Row(
-                    Modifier.clip(RoundedCornerShape(12.dp)).background(C.Bg).border(1.dp, voteColor(v), RoundedCornerShape(12.dp))
+                    Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0x40000000)).border(1.dp, voteColor(v), RoundedCornerShape(12.dp))
                         .padding(start = 3.dp, end = 9.dp, top = 3.dp, bottom = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -468,7 +459,7 @@ private fun ScheduledCard(e: CalEvent, members: Map<String, Member>, myId: Strin
 @Composable
 private fun PastRow(e: CalEvent) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Bar).padding(12.dp),
+        Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), fill = Color(0x26000000), rim = 0.5f).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(kindEmoji(e.info.kind), fontSize = 18.sp)
@@ -523,7 +514,7 @@ private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, 
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().navigationBarsPadding()
                 .padding(horizontal = 20.dp).padding(bottom = 20.dp)
         ) {
-            Text("New event", color = C.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("New event", style = fireText(22.sp, glow = 0.5f))
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("cod", "filth", "other").forEach { k ->
@@ -588,7 +579,7 @@ private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, 
                 }
             }
             Spacer(Modifier.height(18.dp))
-            Button(
+            FireButton(
                 onClick = {
                     Repo.saveEvent(
                         EventInfo(
@@ -600,16 +591,14 @@ private fun CreateEventSheet(initialKind: String, members: Map<String, Member>, 
                     onDismiss()
                 },
                 enabled = slots.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().height(54.dp),
             ) {
-                Text(
+                ButtonLabel(
                     when (slots.size) {
                         0 -> "Pick at least one time"
                         1 -> "Schedule it"
                         else -> "Send time vote (${slots.size} options)"
                     },
-                    fontSize = 16.sp,
                 )
             }
         }
@@ -674,9 +663,7 @@ fun EventChatCard(m: Msg, members: Map<String, Member>, myId: String, onOpen: ()
         Row(
             Modifier
                 .widthIn(max = 320.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(C.Bar)
-                .border(1.dp, C.Field, RoundedCornerShape(16.dp))
+                .glass(RoundedCornerShape(18.dp), fill = Color(0x33140A06))
                 .clickable(onClick = onOpen)
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,

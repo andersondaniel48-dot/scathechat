@@ -86,7 +86,7 @@ fun qrBitmap(text: String, size: Int = 720): Bitmap {
 
 @Composable
 private fun SheetTitle(text: String) {
-    Text(text, color = C.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+    Text(text, style = fireText(22.sp, glow = 0.5f), modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
 }
 
 @Composable
@@ -177,7 +177,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
     var confirmLeave by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.Bar, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
-            Text("Settings", color = C.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Settings", style = fireText(22.sp, glow = 0.5f))
             Spacer(Modifier.height(14.dp))
             OutlinedTextField(name, { name = it }, label = { Text("Your name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(10.dp))

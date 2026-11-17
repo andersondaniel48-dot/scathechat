@@ -112,18 +112,21 @@ fun SetupScreen() {
     LaunchedEffect(invite) { if (invite != null) mode = "join" }
     BackHandler(enabled = mode != "welcome") { mode = "welcome" }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(C.Bg)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .imePadding()
-    ) {
+    Box(Modifier.fillMaxSize()) {
+        EmberBackground(Modifier.fillMaxSize(), intensity = if (mode == "welcome") 1.25f else 0.8f)
+        Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+            SetupContent(mode, setMode = { mode = it })
+        }
+    }
+}
+
+@Composable
+private fun SetupContent(mode: String, setMode: (String) -> Unit) {
+    run {
         when (mode) {
-            "create" -> CreateForm { mode = "welcome" }
-            "join" -> JoinForm { mode = "welcome" }
-            else -> Welcome(onJoin = { mode = "join" }, onCreate = { mode = "create" })
+            "create" -> CreateForm { setMode("welcome") }
+            "join" -> JoinForm { setMode("welcome") }
+            else -> Welcome(onJoin = { setMode("join") }, onCreate = { setMode("create") })
         }
     }
 }
@@ -142,18 +145,15 @@ private fun Welcome(onJoin: () -> Unit, onCreate: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Logo()
-        Text("SCATHE CHAT", color = C.Text, fontSize = 30.sp, fontWeight = FontWeight.Black, letterSpacing = 3.sp)
-        Spacer(Modifier.height(6.dp))
-        Text("Private. Encrypted. Brothers only.", color = C.Dim, fontSize = 15.sp)
-        Spacer(Modifier.height(48.dp))
-        Button(onClick = onJoin, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)) {
-            Text("Join with an invite", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        }
+        Logo(112)
+        Text("SCATHE", style = fireText(64.sp), letterSpacing = 2.sp)
+        Text("chat", color = C.Bone.copy(alpha = 0.75f), fontFamily = Display, fontSize = 20.sp, letterSpacing = 14.sp)
+        Spacer(Modifier.height(14.dp))
+        Text("Private. Encrypted. Brothers only.", color = C.Smoke, fontSize = 15.sp)
+        Spacer(Modifier.height(56.dp))
+        FireButton(onClick = onJoin, modifier = Modifier.fillMaxWidth().height(56.dp)) { ButtonLabel("Join with an invite") }
         Spacer(Modifier.height(12.dp))
-        OutlinedButton(onClick = onCreate, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)) {
-            Text("Create the group", fontSize = 16.sp, color = C.Text)
-        }
+        GlassButton(onClick = onCreate, modifier = Modifier.fillMaxWidth().height(56.dp)) { ButtonLabel("Create the group") }
         Spacer(Modifier.height(18.dp))
         Text(
             "Only one of you creates the group. Everyone else joins by scanning the invite QR.",
@@ -189,13 +189,15 @@ private fun FormScaffold(title: String, onBack: () -> Unit, content: @Composable
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
-        TextButton(onClick = onBack) { Text("‹ Back", color = C.Dim) }
+        TextButton(onClick = onBack) { Text("‹ Back", color = C.Smoke) }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Logo(56)
-            Text(title, color = C.Text, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Logo(60)
+            Text(title, style = fireText(26.sp, glow = 0.6f))
         }
         Spacer(Modifier.height(12.dp))
-        content()
+        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp), fill = Color(0x2E120906)).padding(18.dp)) {
+            content()
+        }
     }
 }
 
@@ -232,10 +234,10 @@ private fun CreateForm(onBack: () -> Unit) {
             "On the Data tab, copy the database URL (https://…firebaseio.com or …firebasedatabase.app) and paste it here.",
         )
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = { copyText(ctx, "Scathe Chat rules", FIREBASE_RULES) }) {
+        GlassButton(onClick = { copyText(ctx, "Scathe Chat rules", FIREBASE_RULES) }) {
             Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.size(8.dp))
-            Text("Copy the rules", color = C.Text)
+            ButtonLabel("Copy the rules", 15)
         }
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(
@@ -262,7 +264,7 @@ private fun CreateForm(onBack: () -> Unit) {
         ColorPicker(color) { color = it }
         ErrorText(err)
         Spacer(Modifier.height(20.dp))
-        Button(
+        FireButton(
             onClick = {
                 busy = true; err = null
                 scope.launch {
@@ -271,11 +273,10 @@ private fun CreateForm(onBack: () -> Unit) {
                 }
             },
             enabled = !busy && url.isNotBlank() && name.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth().height(54.dp),
         ) {
             if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = Color.White)
-            else Text("Create group", fontSize = 16.sp)
+            else ButtonLabel("Create group")
         }
         Spacer(Modifier.height(30.dp))
     }
@@ -286,9 +287,9 @@ private fun Steps(vararg steps: String) {
     steps.forEachIndexed { i, s ->
         Row(Modifier.padding(vertical = 4.dp)) {
             Box(
-                Modifier.size(22.dp).clip(CircleShape).background(C.Field),
+                Modifier.size(24.dp).molten(CircleShape),
                 contentAlignment = Alignment.Center,
-            ) { Text("${i + 1}", color = C.Crimson, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+            ) { Text("${i + 1}", color = Color.White, fontFamily = Display, fontSize = 12.sp) }
             Spacer(Modifier.size(10.dp))
             Text(s, color = C.Text, fontSize = 14.sp)
         }
@@ -314,7 +315,7 @@ private fun JoinForm(onBack: () -> Unit) {
     FormScaffold("Join the group", onBack) {
         Text("Ask whoever created the group to open Scathe Chat → Invite, then scan their QR code.", color = C.Dim, fontSize = 14.sp)
         Spacer(Modifier.height(16.dp))
-        Button(
+        FireButton(
             onClick = {
                 scanner.launch(
                     ScanOptions()
@@ -324,12 +325,11 @@ private fun JoinForm(onBack: () -> Unit) {
                         .setOrientationLocked(false)
                 )
             },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth().height(54.dp),
         ) {
             Icon(Icons.Filled.QrCodeScanner, null)
             Spacer(Modifier.size(10.dp))
-            Text(if (code.isBlank()) "Scan invite QR" else "Scan again", fontSize = 16.sp)
+            ButtonLabel(if (code.isBlank()) "Scan invite QR" else "Scan again")
         }
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(
@@ -349,7 +349,7 @@ private fun JoinForm(onBack: () -> Unit) {
         ColorPicker(color) { color = it }
         ErrorText(err)
         Spacer(Modifier.height(20.dp))
-        Button(
+        FireButton(
             onClick = {
                 busy = true; err = null
                 scope.launch {
@@ -358,12 +358,10 @@ private fun JoinForm(onBack: () -> Unit) {
                 }
             },
             enabled = !busy && code.isNotBlank() && name.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(),
+            modifier = Modifier.fillMaxWidth().height(54.dp),
         ) {
             if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = Color.White)
-            else Text("Join", fontSize = 16.sp)
+            else ButtonLabel("Join")
         }
         Spacer(Modifier.height(30.dp))
     }

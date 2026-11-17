@@ -99,6 +99,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.haze
 import dev.daniel.scathechat.R
 import dev.daniel.scathechat.data.Conn
 import dev.daniel.scathechat.data.LinkInfo
@@ -259,49 +265,22 @@ fun ChatScreen() {
     }
 
     val others = members.values.filter { it.id != myId }
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(C.Bg)
-    ) {
-        TopBar(
-            title = group?.name ?: "Scathe Chat",
-            subtitle = when {
-                conn == Conn.ERROR -> connError ?: "Connection problem"
-                conn == Conn.OFFLINE -> "Offline · messages will send when you're back"
-                conn == Conn.CONNECTING && state.messages.isEmpty() -> "Connecting…"
-                else -> subtitleFor(members, myId, now)
-            },
-            subtitleAlert = conn == Conn.ERROR || conn == Conn.OFFLINE,
-            onMembers = { sheet = Sheet.MEMBERS },
-            onInvite = { sheet = Sheet.INVITE },
-            onSettings = { sheet = Sheet.SETTINGS },
-            onCalendar = { showCalendar = true },
-            upcoming = state.events.count { e ->
-                val s = e.info.start
-                !e.info.cancelled && (e.info.isPoll || (s != null && s + e.info.dur * 60_000L > now))
-            },
-        )
-        if (update != null) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF3A1417))
-                    .clickable { openUrl(ctx, update!!) }
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.SystemUpdate, null, tint = C.Crimson, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("A new version of Scathe Chat is ready — tap to download", color = C.Text, fontSize = 13.sp)
-            }
-        }
-        Box(Modifier.weight(1f)) {
+    val hazeState = remember { HazeState() }
+    val density = LocalDensity.current
+    var topH by remember { mutableIntStateOf(0) }
+    var bottomH by remember { mutableIntStateOf(0) }
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().haze(hazeState)) {
+            EmberBackground(Modifier.fillMaxSize())
             LazyColumn(
                 state = listState,
                 reverseLayout = true,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                contentPadding = PaddingValues(
+                    start = 10.dp, end = 10.dp,
+                    top = with(density) { topH.toDp() } + 6.dp,
+                    bottom = with(density) { bottomH.toDp() } + 6.dp,
+                ),
             ) {
                 items(rows, key = { it.key }, contentType = { if (it is Row.Day) 0 else 1 }) { row ->
                     when (row) {
@@ -344,16 +323,64 @@ fun ChatScreen() {
             if (state.messages.isEmpty() && conn != Conn.CONNECTING) {
                 EmptyState(onInvite = { sheet = Sheet.INVITE }, Modifier.align(Alignment.Center))
             }
-            if (!atBottom) {
-                SmallFloatingActionButton(
-                    onClick = { scope.launch { listState.animateScrollToItem(0) } },
-                    containerColor = C.Field,
-                    contentColor = C.Text,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(14.dp),
-                ) { Icon(Icons.Filled.KeyboardArrowDown, "Newest") }
+        }
+        Column(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .onSizeChanged { topH = it.height }
+                .statusBarsPadding()
+                .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            TopBar(
+                hazeState = hazeState,
+                title = group?.name ?: "Scathe Chat",
+                subtitle = when {
+                    conn == Conn.ERROR -> connError ?: "Connection problem"
+                    conn == Conn.OFFLINE -> "Offline · messages send when you're back"
+                    conn == Conn.CONNECTING && state.messages.isEmpty() -> "Connecting…"
+                    else -> subtitleFor(members, myId, now)
+                },
+                subtitleAlert = conn == Conn.ERROR || conn == Conn.OFFLINE,
+                onMembers = { sheet = Sheet.MEMBERS },
+                onInvite = { sheet = Sheet.INVITE },
+                onSettings = { sheet = Sheet.SETTINGS },
+                onCalendar = { showCalendar = true },
+                upcoming = state.events.count { e ->
+                    val s = e.info.start
+                    !e.info.cancelled && (e.info.isPoll || (s != null && s + e.info.dur * 60_000L > now))
+                },
+            )
+            if (update != null) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .molten(RoundedCornerShape(16.dp), alpha = 0.85f)
+                        .clickable { openUrl(ctx, update!!) }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.SystemUpdate, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("New version of Scathe Chat ready. Tap to download.", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
+        if (!atBottom) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = with(density) { bottomH.toDp() } + 10.dp)
+                    .size(44.dp)
+                    .blurGlass(hazeState, CircleShape)
+                    .clickable { scope.launch { listState.animateScrollToItem(0) } },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Filled.KeyboardArrowDown, "Newest", tint = C.Bone) }
+        }
         Composer(
+            hazeState = hazeState,
+            modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { bottomH = it.height },
             replyTo = replyTo,
             replyName = replyTo?.let { members[it.from]?.name },
             onCancelReply = { replyTo = null },
@@ -463,6 +490,7 @@ private fun subtitleFor(members: Map<String, Member>, myId: String, now: Long): 
 
 @Composable
 private fun TopBar(
+    hazeState: HazeState,
     title: String,
     subtitle: String,
     subtitleAlert: Boolean,
@@ -473,35 +501,39 @@ private fun TopBar(
     upcoming: Int,
 ) {
     var menu by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(24.dp)
     Row(
         Modifier
             .fillMaxWidth()
-            .background(C.Bar)
-            .statusBarsPadding()
             .height(62.dp)
-            .padding(start = 12.dp, end = 4.dp),
+            .blurGlass(hazeState, shape)
+            .padding(start = 6.dp, end = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(C.Bg), contentAlignment = Alignment.Center) {
-            Image(painterResource(R.drawable.ic_logo), null, modifier = Modifier.size(44.dp))
-        }
+        Image(painterResource(R.drawable.ic_logo), null, modifier = Modifier.size(48.dp))
         Column(
             Modifier
                 .weight(1f)
                 .clickable(onClick = onMembers)
-                .padding(horizontal = 12.dp)
+                .padding(horizontal = 4.dp)
         ) {
-            Text(title, color = C.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, color = if (subtitleAlert) Color(0xFFFFB4B4) else C.Dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, color = C.Bone, fontFamily = Display, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!subtitleAlert && subtitle.endsWith("online")) {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(C.Online))
+                    Spacer(Modifier.width(5.dp))
+                }
+                Text(subtitle, color = if (subtitleAlert) Color(0xFFFFB4A0) else C.Smoke, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         IconButton(onClick = onCalendar) {
-            BadgedBox(badge = { if (upcoming > 0) Badge(containerColor = C.Crimson) { Text("$upcoming") } }) {
-                Icon(Icons.Filled.CalendarMonth, "Calendar", tint = C.Text)
+            BadgedBox(badge = { if (upcoming > 0) Badge(containerColor = C.Ember, contentColor = Color.White) { Text("$upcoming") } }) {
+                Icon(Icons.Filled.CalendarMonth, "Calendar", tint = C.Bone)
             }
         }
         Box {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Menu", tint = C.Text) }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Menu", tint = C.Bone) }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Color(0xFF221610)) {
                 DropdownMenuItem(text = { Text("Calendar") }, leadingIcon = { Icon(Icons.Filled.CalendarMonth, null) }, onClick = { menu = false; onCalendar() })
                 DropdownMenuItem(text = { Text("Members") }, leadingIcon = { Icon(Icons.Filled.Group, null) }, onClick = { menu = false; onMembers() })
                 DropdownMenuItem(text = { Text("Invite a brother") }, leadingIcon = { Icon(Icons.Filled.QrCode, null) }, onClick = { menu = false; onInvite() })
@@ -513,10 +545,10 @@ private fun TopBar(
 
 @Composable
 private fun DayChip(label: String) {
-    Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
         Text(
-            label, color = C.Dim, fontSize = 12.sp, fontWeight = FontWeight.Medium,
-            modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bar).padding(horizontal = 12.dp, vertical = 4.dp),
+            label, color = C.Smoke, fontFamily = Display, fontSize = 11.sp, letterSpacing = 1.sp,
+            modifier = Modifier.glass(RoundedCornerShape(50), fill = Color(0x26000000), rim = 0.5f).padding(horizontal = 14.dp, vertical = 5.dp),
         )
     }
 }
@@ -524,20 +556,24 @@ private fun DayChip(label: String) {
 @Composable
 private fun EmptyState(onInvite: () -> Unit, modifier: Modifier) {
     Column(modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Image(painterResource(R.drawable.ic_logo), null, modifier = Modifier.size(110.dp))
-        Text("No messages yet", color = C.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(6.dp))
+        Image(painterResource(R.drawable.ic_logo), null, modifier = Modifier.size(120.dp))
+        Text("Quiet in here", style = fireText(26.sp))
+        Spacer(Modifier.height(8.dp))
         Text(
-            "Everything here is end-to-end encrypted. Only phones with your group's invite can read it.",
-            color = C.Dim, fontSize = 14.sp, textAlign = TextAlign.Center,
+            "Everything you send is encrypted on this phone. Only phones with your group's invite can read it.",
+            color = C.Smoke, fontSize = 14.sp, textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(14.dp))
-        TextButton(onClick = onInvite) { Text("Invite your brothers") }
+        Spacer(Modifier.height(18.dp))
+        GlassButton(onClick = onInvite) {
+            Icon(Icons.Filled.QrCode, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); ButtonLabel("Invite your brothers", 15)
+        }
     }
 }
 
 @Composable
 private fun Composer(
+    hazeState: HazeState,
+    modifier: Modifier,
     replyTo: Msg?,
     replyName: String?,
     onCancelReply: () -> Unit,
@@ -570,94 +606,94 @@ private fun Composer(
         }
     }
     var menu by remember { mutableStateOf(false) }
+    val card = RoundedCornerShape(18.dp)
 
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
-            .background(C.Bar)
             .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+            .padding(start = 10.dp, end = 10.dp, bottom = 8.dp, top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (replyTo != null) {
-            Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.AutoMirrored.Filled.Reply, null, tint = C.Crimson, modifier = Modifier.size(18.dp))
-                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                    Text("Replying to ${replyName ?: "message"}", color = C.Crimson, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    Text(replyTo.preview(), color = C.Dim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(Modifier.fillMaxWidth().blurGlass(hazeState, card).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.Reply, null, tint = C.Ember, modifier = Modifier.size(18.dp))
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    Text("Replying to ${replyName ?: "message"}", color = C.Ember, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text(replyTo.preview(), color = C.Smoke, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                IconButton(onClick = onCancelReply) { Icon(Icons.Filled.Close, "Cancel reply", tint = C.Dim) }
+                IconButton(onClick = onCancelReply) { Icon(Icons.Filled.Close, "Cancel reply", tint = C.Smoke) }
             }
         }
         if (url != null && url != dismissed && (loading || preview != null)) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = 4.dp, top = 8.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(C.Field),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Row(Modifier.fillMaxWidth().blurGlass(hazeState, card), verticalAlignment = Alignment.CenterVertically) {
                 val p = preview
                 val bmp = remember(p?.image) { MediaUtil.decodeThumb(p?.image) }
                 if (bmp != null) {
-                    Image(bmp.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.size(58.dp))
+                    Image(bmp.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.size(60.dp))
                 } else {
-                    Box(Modifier.size(58.dp), contentAlignment = Alignment.Center) {
-                        if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Box(Modifier.size(60.dp), contentAlignment = Alignment.Center) {
+                        if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = C.Ember)
                     }
                 }
                 Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                    Text(p?.title ?: if (loading) "Loading preview…" else url, color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(p?.site ?: "", color = C.Dim, fontSize = 12.sp, maxLines = 1)
+                    Text(p?.title ?: if (loading) "Loading preview…" else url, color = C.Bone, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(p?.site ?: "", color = C.Smoke, fontSize = 12.sp, maxLines = 1)
                 }
-                IconButton(onClick = { dismissed = url; preview = null }) { Icon(Icons.Filled.Close, "Remove preview", tint = C.Dim) }
+                IconButton(onClick = { dismissed = url; preview = null }) { Icon(Icons.Filled.Close, "Remove preview", tint = C.Smoke) }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Add, "Attach", tint = C.Text) }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Photos & videos") }, leadingIcon = { Icon(Icons.Filled.Image, null) }, onClick = { menu = false; onPhotos() })
-                    DropdownMenuItem(text = { Text("Camera") }, leadingIcon = { Icon(Icons.Filled.PhotoCamera, null) }, onClick = { menu = false; onCamera() })
-                    DropdownMenuItem(text = { Text("File") }, leadingIcon = { Icon(Icons.Filled.AttachFile, null) }, onClick = { menu = false; onFiles() })
-                }
-            }
-            TextField(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = { Text("Message", color = C.Faint) },
-                maxLines = 6,
-                shape = RoundedCornerShape(24.dp),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = C.Field,
-                    unfocusedContainerColor = C.Field,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = C.Crimson,
-                    focusedTextColor = C.Text,
-                    unfocusedTextColor = C.Text,
-                ),
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(6.dp))
-            FilledIconButton(
-                onClick = {
-                    val t = text.trim()
-                    if (t.isNotEmpty()) {
-                        val link = if (url != null && url != dismissed) preview?.takeIf { it.url == url } else null
-                        onSend(t, link, url == null || url != dismissed)
-                        text = ""
-                        preview = null
-                        dismissed = null
+        Row(verticalAlignment = Alignment.Bottom) {
+            Row(
+                Modifier.weight(1f).defaultMinSize(minHeight = 54.dp).blurGlass(hazeState, RoundedCornerShape(27.dp)),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Box {
+                    IconButton(onClick = { menu = true }, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp)) {
+                        Icon(Icons.Filled.Add, "Attach", tint = C.Flame)
                     }
-                },
-                enabled = text.isNotBlank(),
-                colors = IconButtonDefaults.filledIconButtonColors(containerColor = C.Crimson, disabledContainerColor = C.Field),
-                modifier = Modifier.size(52.dp),
-            ) { Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = Color.White) }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Color(0xFF221610)) {
+                        DropdownMenuItem(text = { Text("Photos & videos") }, leadingIcon = { Icon(Icons.Filled.Image, null) }, onClick = { menu = false; onPhotos() })
+                        DropdownMenuItem(text = { Text("Camera") }, leadingIcon = { Icon(Icons.Filled.PhotoCamera, null) }, onClick = { menu = false; onCamera() })
+                        DropdownMenuItem(text = { Text("File") }, leadingIcon = { Icon(Icons.Filled.AttachFile, null) }, onClick = { menu = false; onFiles() })
+                    }
+                }
+                TextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("Message", color = C.Faint) },
+                    maxLines = 6,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        cursorColor = C.Ember,
+                        focusedTextColor = C.Bone,
+                        unfocusedTextColor = C.Bone,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            val canSend = text.isNotBlank()
+            Box(
+                Modifier
+                    .size(54.dp)
+                    .then(if (canSend) Modifier.molten(CircleShape) else Modifier.blurGlass(hazeState, CircleShape))
+                    .clickable(enabled = canSend) {
+                        val t = text.trim()
+                        if (t.isNotEmpty()) {
+                            val link = if (url != null && url != dismissed) preview?.takeIf { it.url == url } else null
+                            onSend(t, link, url == null || url != dismissed)
+                            text = ""
+                            preview = null
+                            dismissed = null
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = if (canSend) Color.White else C.Faint) }
         }
     }
 }
@@ -668,14 +704,11 @@ fun MemberDot(m: Member, size: Int = 36) {
         Modifier.size(size.dp).clip(CircleShape).background(C.member(m.color)),
         contentAlignment = Alignment.Center,
     ) {
-        Text(m.name.take(1).uppercase(), color = Color.Black, fontWeight = FontWeight.Bold, fontSize = (size / 2.4).sp)
+        Text(m.name.take(1).uppercase(), color = Color.Black, fontFamily = Display, fontSize = (size / 2.3).sp)
     }
 }
 
 @Composable
 fun Pill(text: String) {
-    Text(
-        text, color = C.Dim, fontSize = 11.sp,
-        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(C.Field).padding(horizontal = 8.dp, vertical = 2.dp),
-    )
+    GlassPill(text)
 }
