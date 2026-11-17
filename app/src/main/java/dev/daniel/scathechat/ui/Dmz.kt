@@ -182,15 +182,24 @@ private data class Placed(val spot: Dmz.Spot, val at: Offset)
 /** Spots sharing a grid square fan out in a ring so each can be tapped. Areas sit in the middle of their square. */
 private fun place(map: Dmz.MapDef, spots: List<Dmz.Spot>): List<Placed> {
     val out = ArrayList<Placed>()
-    spots.filter { it.kind != Dmz.Kind.AREA }.groupBy { it.grid }.forEach { (grid, list) ->
+    val zones = Dmz.zones.filter { it.map == map.id }
+    // Group by square, and within a square by the location they belong to, so a prison's rooms sit by the prison.
+    spots.filter { it.kind != Dmz.Kind.AREA }.groupBy { it.grid }.forEach { (grid, inCell) ->
         val (c, r) = Dmz.cell(map, grid) ?: return@forEach
-        val center = Offset((c + 0.5f) * CELL, (r + 0.5f) * CELL)
-        if (list.size == 1) out.add(Placed(list[0], center))
-        else {
-            val rad = if (list.size > 6) 0.36f * CELL else 0.27f * CELL
-            list.forEachIndexed { i, s ->
-                val a = (i * 2 * PI / list.size - PI / 2).toFloat()
-                out.add(Placed(s, center + Offset(cos(a) * rad, sin(a) * rad)))
+        val cellCenter = Offset((c + 0.5f) * CELL, (r + 0.5f) * CELL)
+        val byZone = inCell.groupBy { s -> zones.firstOrNull { z -> s.place.contains(z.name, ignoreCase = true) } }
+        byZone.forEach { (zone, list) ->
+            val anchor = if (zone == null || byZone.size > 1 && zone == null) cellCenter else Offset(
+                (zone.cx * CELL).coerceIn((c + 0.22f) * CELL, (c + 0.78f) * CELL),
+                (zone.cy * CELL).coerceIn((r + 0.22f) * CELL, (r + 0.78f) * CELL),
+            )
+            if (list.size == 1) out.add(Placed(list[0], anchor))
+            else {
+                val rad = (if (list.size > 6) 0.24f else if (list.size > 3) 0.18f else 0.13f) * CELL
+                list.forEachIndexed { i, sp ->
+                    val a = (i * 2 * PI / list.size - PI / 2).toFloat()
+                    out.add(Placed(sp, anchor + Offset(cos(a) * rad, sin(a) * rad)))
+                }
             }
         }
     }
@@ -260,6 +269,25 @@ private sealed interface Setup {
  * download the sharper official map and carry the grid over to it.
  */
 private fun autoSetup(ctx: Context, map: Dmz.MapDef): Setup {
+    if (map.fullExtent) {
+        val full = floatArrayOf(0f, 0f, 1f, 1f)
+        val files = map.sources.mapIndexed { i, u -> u to File(ctx.cacheDir, "dmz_src${i}_${map.id}") }
+        val got = files.filter { (u, f) -> downloadTo(u, f) == null }
+        if (got.isEmpty()) return Setup.Failed("no map source answered")
+        var pick = got.first()
+        var cal = full
+        if (got.size > 1) {
+            // the sharpest copy, checked against the next one; if their framing differs, carry the grid over.
+            // If the match can't be confirmed, use the copy whose framing is known.
+            val a = MapAlign.decode(got[0].second, 2400)
+            val b = MapAlign.decode(got[1].second, 2400)
+            val c = if (a != null && b != null) MapAlign.register(a, b, full, map.cols, map.rows) else null
+            if (c != null) cal = c else pick = got[1]
+        }
+        pick.second.copyTo(imgFile(ctx, map.id), overwrite = true)
+        saveSrc(ctx, map.id, pick.first); saveCal(ctx, map.id, cal)
+        return Setup.Done(pick.first, cal)
+    }
     val tmpGrid = File(ctx.cacheDir, "dmz_grid_${map.id}")
     var gridUrl: String? = null
     var lastErr = "no map source"
@@ -290,7 +318,7 @@ private fun autoSetup(ctx: Context, map: Dmz.MapDef): Setup {
 }
 
 /** The group's shared backgrounds: one person lines up the grid, everyone gets it. */
-private const val ALIGN_V = 2 // bump to make every phone redo the automatic line-up
+private const val ALIGN_V = 3 // bump to make every phone redo the automatic line-up
 private fun sharedMap(map: String): JSONObject? =
     Repo.groupConfig.value?.optJSONObject("maps")?.optJSONObject(map)?.takeIf { it.optInt("v") >= ALIGN_V }
 private fun shareMap(map: String, url: String, cal: FloatArray) {

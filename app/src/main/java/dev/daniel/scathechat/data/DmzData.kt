@@ -18,13 +18,16 @@ object Dmz {
     data class MapDef(
         val id: String, val title: String, val short: String, val cols: Int, val rows: Int, val rowStart: Int,
         val sources: List<String>, val hires: String? = null,
+        /** The source images show exactly the whole grid, edge to edge (no grid drawn to detect). */
+        val fullExtent: Boolean = false,
     )
 
     val maps = listOf(
-        MapDef("hajin", "Hajin", "Hajin", 10, 9, 1, listOf(
-            "https://codcentral.net/assets/library/mw4/dmz/map/hajin-map-1440.webp",
+        // Hajin's tac-map grid runs A–J and 0–9 (the X01 entrance is B0); the official map image covers it exactly.
+        MapDef("hajin", "Hajin", "Hajin", 10, 10, 0, listOf(
+            "https://mw4meta.com/images/tacmap/hajin-map-2048.webp",
             "https://codmunity.gg/dmz/hajin-map-cod2-1120.webp",
-        ), hires = "https://mw4meta.com/images/tacmap/hajin-map-2048.webp"),
+        ), fullExtent = true),
         MapDef("x01_lower", "X01 · Lower floor (Deep Vault)", "X01 Lower", 10, 9, 0, listOf(
             "https://codcentral.net/assets/library/mw4/dmz/map/x01-floor-1-v4.webp",
         )),
@@ -141,7 +144,7 @@ object Dmz {
         for (g in listOf("F4", "G6", "G7", "G8", "I7")) add(s("hajin", "Hanex Bank Branch", Kind.BANK, g, "Bank branch", "Vault needs the Bank Branch Vault Access keycard."))
         add(s("hajin", "Black Market", Kind.MARKET, "B7", "Deadtown", "South Deadtown. Weapons locker in the basement back room."))
         add(s("hajin", "Black Market", Kind.MARKET, "C2", "Hanrim Village", "East Hanrim Village, far north-west. Weapons locker in the basement."))
-        add(s("hajin", "X01 entrance", Kind.ENTRY, "B1", "North-west border", "Square B0 on the in-game tac map: just past the top edge here, straight north of the 14th Political Prison. An abandoned freight elevator; press the button by the gate and stay in the cage. You can also deploy straight into X01 from Select Location."))
+        add(s("hajin", "X01 entrance", Kind.ENTRY, "B0", "North-west border", "Abandoned freight elevator straight north of the 14th Political Prison. Press the button by the gate and stay in the cage. You can also deploy straight into X01 from Select Location."))
 
         // ------------------------------------------------------------ X01 areas
         add(s(L, "Deep Vault", Kind.AREA, "C2", "X01 lower floor", "Round vault gate (Deep Vault keycards). Elevator down to three levels of keycard rooms. Blix may be here."))
@@ -193,23 +196,24 @@ object Dmz {
     }
 
     val zones = listOf(
-        Zone("hajin", "14th Political Prison", 2.0f, 2.5f, 0.85f, Threat.HIGH, "North Korea. The Citadel is Critical."),
-        Zone("hajin", "Hanrim Village", 2.5f, 1.5f, 0.42f, Threat.NONE, "Far north-west. Black market."),
-        Zone("hajin", "Haneul Nuclear Reactor", 8.0f, 3.8f, 0.95f, Threat.HIGH, "Radiation: bring protection and a gas mask. Border Zone is Medium."),
-        Zone("hajin", "Cheongun Village", 4.95f, 3.75f, 0.8f, Threat.LOW, "Heavenly Luck Casino is High. Russian border crossing to the north."),
-        Zone("hajin", "Mirae General Hospital", 5.62f, 4.62f, 0.4f, Threat.LOW, "Beside a train station."),
-        Zone("hajin", "Chang-san Air Base", 1.6f, 5.0f, 0.95f, Threat.CRITICAL, "North Korea. The bunker is Extreme."),
-        Zone("hajin", "Underground Silo Complex", 0.5f, 5.55f, 0.35f, Threat.NONE, ""),
-        Zone("hajin", "Deadtown", 1.6f, 6.65f, 0.6f, Threat.LOW, "North Korea. Re-Education Center is Medium. Sewers below."),
-        Zone("hajin", "Imjin Farmland", 3.5f, 7.2f, 0.85f, Threat.LOW, "Rice Mill is Medium."),
-        Zone("hajin", "NuriGO Mall", 7.3f, 5.0f, 0.6f, Threat.HIGH, "West is High, East is Medium. Tunnels underneath."),
-        Zone("hajin", "The Grid", 6.5f, 5.6f, 0.58f, Threat.CRITICAL, "Downtown Hajin City. Netshin Tech Complex is Extreme."),
-        Zone("hajin", "Construction Zone", 7.35f, 6.35f, 0.3f, Threat.CRITICAL, "Part of The Grid."),
-        Zone("hajin", "Hotel Lucera", 7.75f, 6.8f, 0.24f, Threat.NONE, ""),
-        Zone("hajin", "Cheonwang Peak Array", 5.3f, 6.35f, 0.42f, Threat.MEDIUM, "Summit array. Helipad on the roof."),
-        Zone("hajin", "Wolves Stadium", 5.95f, 6.8f, 0.4f, Threat.MEDIUM, "Police station and bank nearby."),
-        Zone("hajin", "Hajin River Heights", 6.6f, 6.85f, 0.36f, Threat.MEDIUM, "Compound Echo, Gangbyeon apartments."),
-        Zone("hajin", "Songdo Wharf", 8.5f, 6.4f, 0.6f, Threat.LOW, "East coast."),
+        // Placed against the official map on the A–J / 0–9 grid (cells from the top-left).
+        Zone("hajin", "14th Political Prison", 2.05f, 3.35f, 0.6f, Threat.HIGH, "North Korea. The Citadel is Critical."),
+        Zone("hajin", "Hanrim Village", 2.4f, 2.25f, 0.4f, Threat.NONE, "Far north-west. Black market."),
+        Zone("hajin", "Haneul Nuclear Reactor", 7.97f, 4.5f, 0.85f, Threat.HIGH, "Radiation: bring protection and a gas mask. Border Zone is Medium."),
+        Zone("hajin", "Cheongun Village", 4.95f, 4.2f, 0.75f, Threat.LOW, "Heavenly Luck Casino is High. Russian border crossing to the north."),
+        Zone("hajin", "Mirae General Hospital", 5.62f, 5.15f, 0.38f, Threat.LOW, "Beside a train station."),
+        Zone("hajin", "Chang-san Air Base", 1.6f, 5.55f, 0.9f, Threat.CRITICAL, "North Korea. The bunker is Extreme."),
+        Zone("hajin", "Underground Silo Complex", 0.5f, 6.15f, 0.33f, Threat.NONE, ""),
+        Zone("hajin", "Deadtown", 1.6f, 7.4f, 0.55f, Threat.LOW, "North Korea. Re-Education Center is Medium. Sewers below."),
+        Zone("hajin", "Imjin Farmland", 3.5f, 8.0f, 0.8f, Threat.LOW, "Rice Mill is Medium."),
+        Zone("hajin", "NuriGO Mall", 7.3f, 5.55f, 0.55f, Threat.HIGH, "West is High, East is Medium. Tunnels underneath."),
+        Zone("hajin", "The Grid", 6.5f, 6.22f, 0.55f, Threat.CRITICAL, "Downtown Hajin City. Netshin Tech Complex is Extreme."),
+        Zone("hajin", "Construction Zone", 7.35f, 7.05f, 0.3f, Threat.CRITICAL, "Part of The Grid."),
+        Zone("hajin", "Hotel Lucera", 7.75f, 7.55f, 0.22f, Threat.NONE, ""),
+        Zone("hajin", "Cheonwang Peak Array", 5.3f, 7.05f, 0.4f, Threat.MEDIUM, "Summit array. Helipad on the roof."),
+        Zone("hajin", "Wolves Stadium", 5.95f, 7.55f, 0.38f, Threat.MEDIUM, "Police station and bank nearby."),
+        Zone("hajin", "Hajin River Heights", 6.6f, 7.6f, 0.35f, Threat.MEDIUM, "Compound Echo, Gangbyeon apartments."),
+        Zone("hajin", "Songdo Wharf", 8.5f, 7.1f, 0.55f, Threat.LOW, "East coast."),
     )
 
     /** Everything searchable on a map, plus zones as searchable places. */
