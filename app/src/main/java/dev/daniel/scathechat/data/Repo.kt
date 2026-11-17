@@ -95,6 +95,8 @@ object Repo {
     val pendingShare = MutableStateFlow<List<Uri>>(emptyList())
     val showInvite = MutableStateFlow(false)
     val groupConfig = MutableStateFlow<JSONObject?>(null)
+    /** Pins the group dropped on the DMZ maps. */
+    val pins = MutableStateFlow<List<DmzPin>>(emptyList())
     /** Media whose server copy was cleaned up and isn't on this phone. */
     val expired = MutableStateFlow<Set<String>>(emptySet())
     private val sigDispatcher = java.util.concurrent.Executors.newSingleThreadExecutor().asCoroutineDispatcher()
@@ -358,7 +360,7 @@ object Repo {
             if (media.kind == "image" || media.kind == "gif" || (media.kind == "video" && media.size < 25L * 1024 * 1024)) requestMedia(m)
         }
         val mine = me.value?.id
-        if (!suppressNotify && fresh.any { it.from != mine && it.type !in setOf("vote", "cfg", "call") && it.ts > now() - 60_000 }) {
+        if (!suppressNotify && fresh.any { it.from != mine && it.type !in setOf("vote", "cfg", "call", "pin") && it.ts > now() - 60_000 }) {
             dev.daniel.scathechat.ui.LogoFx.emit(dev.daniel.scathechat.ui.LogoFx.Ev.RECEIVED)
         }
         if (suppressNotify || (foreground && viewing)) return
@@ -367,7 +369,7 @@ object Repo {
         val g = group.value ?: return
         for (m in fresh) {
             if (m.ts < now() - 10 * 60_000) continue
-            if (m.type == "vote" || m.type == "cfg" || m.type == "cod" || m.type == "codstats") continue
+            if (m.type == "vote" || m.type == "cfg" || m.type == "cod" || m.type == "codstats" || m.type == "pin") continue
             if (m.type == "call") continue
             if (m.type == "react") {
                 val target = m.target?.let { chat.value.byId[it] } ?: continue
@@ -445,7 +447,16 @@ object Repo {
         val eventMsgs = HashMap<String, ArrayList<Msg>>()
         val votes = HashMap<String, HashMap<String, Msg>>() // eid -> member -> newest vote
         var cfg: Msg? = null
+        val pinLatest = HashMap<String, Msg>()
         for (m in snapshot) {
+            if (m.type == "pin") {
+                val pid = m.data?.let { runCatching { JSONObject(it).optString("pid") }.getOrNull() }
+                if (!pid.isNullOrEmpty()) {
+                    val prev = pinLatest[pid]
+                    if (prev == null || prev.ts <= m.ts) pinLatest[pid] = m
+                }
+                continue
+            }
             if (m.type == "cod" || m.type == "codstats") continue // retired stats feature
             if (m.type == "cfg") {
                 if (cfg == null || cfg.ts <= m.ts) cfg = m
@@ -469,6 +480,12 @@ object Repo {
             }
         }
         list.sortWith(compareBy<Msg>({ it.ts }, { it.key ?: "~" }))
+        pins.value = pinLatest.values.mapNotNull { m ->
+            val o = runCatching { JSONObject(m.data!!) }.getOrNull() ?: return@mapNotNull null
+            if (o.optBoolean("del")) null
+            else DmzPin(o.optString("pid"), o.optString("map"), o.optDouble("x").toFloat(), o.optDouble("y").toFloat(),
+                o.optString("label"), o.optString("kind", "note"), m.from, m.ts)
+        }.sortedBy { it.ts }
         val rmap = HashMap<String, Map<String, String>>()
         for ((t, per) in reacts) {
             val m = per.filterValues { it.second.isNotEmpty() }.mapValues { it.value.second }
@@ -621,7 +638,7 @@ object Repo {
             val key = rtdb(g).post("rooms/${g.roomId}/m", body)
             val cur = current(m)
             if (cur.key == null) put(cur.copy(key = key, status = Msg.SENT, sig = signed.sig))
-            if (m.type !in setOf("vote", "cfg")) Push.notifyOthers(urgent = m.type == "call")
+            if (m.type !in setOf("vote", "cfg", "pin")) Push.notifyOthers(urgent = m.type == "call")
         } catch (e: Exception) {
             Log.w(TAG, "deliver", e)
             val cur = current(m)

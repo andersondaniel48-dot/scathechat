@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.QrCode
@@ -189,6 +190,7 @@ fun ChatScreen() {
 
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     var showCalendar by rememberSaveable { mutableStateOf(false) }
+    var showDmz by rememberSaveable { mutableStateOf(false) }
     var showLibrary by rememberSaveable { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var highlightId by remember { mutableStateOf<String?>(null) }
@@ -393,6 +395,7 @@ fun ChatScreen() {
                 onInvite = { sheet = Sheet.INVITE },
                 onSettings = { sheet = Sheet.SETTINGS },
                 onCalendar = { showCalendar = true },
+                onDmz = { showDmz = true },
                 onSearch = { showSearch = true },
                 onLibrary = { showLibrary = true },
                 onCall = { video -> withCallPermissions(video) { CallManager.start(video) } },
@@ -493,6 +496,7 @@ fun ChatScreen() {
         }
     }
     if (showCalendar) CalendarScreen(onClose = { showCalendar = false })
+    if (showDmz) DmzScreen(onClose = { showDmz = false })
     if (showLibrary) MediaLibrary(onClose = { showLibrary = false }, onJump = { jumpTo(it) })
     if (showSearch) ChatSearch(onClose = { showSearch = false }, onJump = { jumpTo(it) })
     killcam?.let { k -> KillcamOverlay(k, members) { killcam = null } }
@@ -644,6 +648,7 @@ private fun TopBar(
     onInvite: () -> Unit,
     onSettings: () -> Unit,
     onCalendar: () -> Unit,
+    onDmz: () -> Unit,
     onSearch: () -> Unit,
     onLibrary: () -> Unit,
     onCall: (Boolean) -> Unit,
@@ -688,6 +693,7 @@ private fun TopBar(
                 DropdownMenuItem(text = { Text("Video call") }, leadingIcon = { Icon(Icons.Filled.Videocam, null) }, onClick = { callMenu = false; onCall(true) })
             }
         }
+        IconButton(onClick = onDmz) { Icon(Icons.Filled.Map, "DMZ maps", tint = C.Bone) }
         IconButton(onClick = onCalendar) {
             BadgedBox(badge = { if (upcoming > 0) Badge(containerColor = C.Ember, contentColor = Color.White) { Text("$upcoming") } }) {
                 Icon(Icons.Filled.CalendarMonth, "Calendar", tint = C.Bone)
@@ -696,6 +702,7 @@ private fun TopBar(
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Menu", tint = C.Bone) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Color(0xFF221610)) {
+                DropdownMenuItem(text = { Text("DMZ mode") }, leadingIcon = { Icon(Icons.Filled.Map, null) }, onClick = { menu = false; onDmz() })
                 DropdownMenuItem(text = { Text("Search chat") }, leadingIcon = { Icon(Icons.Filled.Search, null) }, onClick = { menu = false; onSearch() })
                 DropdownMenuItem(text = { Text("Media & files") }, leadingIcon = { Icon(Icons.Filled.PhotoLibrary, null) }, onClick = { menu = false; onLibrary() })
                 DropdownMenuItem(text = { Text("Calendar") }, leadingIcon = { Icon(Icons.Filled.CalendarMonth, null) }, onClick = { menu = false; onCalendar() })

@@ -210,6 +210,7 @@ data class Msg(
         type == "loc" -> "📍 Location" + (data?.let { runCatching { JSONObject(it).optString("place") }.getOrNull() }?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: "")
         type == "killcam" -> "📹 Killcam" + (data?.let { runCatching { JSONObject(it).optString("c") }.getOrNull() }?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: "")
         type == "cfg" -> "Changed group settings"
+        type == "pin" -> "Dropped a DMZ map pin"
         else -> text ?: link?.url ?: ""
     }
 
@@ -282,3 +283,6 @@ data class ChatState(
     val byId: Map<String, Msg> = emptyMap(),
     val byIdAll: Set<String> = emptySet(),
 )
+
+/** A pin someone in the group dropped on a DMZ map. x/y are in grid cells from the map's top-left. */
+data class DmzPin(val pid: String, val map: String, val x: Float, val y: Float, val label: String, val kind: String, val by: String, val ts: Long)
