@@ -66,7 +66,11 @@ class CallActivity : ComponentActivity() {
                 combine(CallManager.active, CallManager.incoming, CallManager.minimized) { a, i, m -> Triple(a, i, m) }
                     .collect { (a, i, m) ->
                         when {
-                            a == null && i == null -> finishAndRemoveTask()
+                            a == null && i == null -> {
+                                // answering briefly clears "incoming" before the call starts; don't close on that blip
+                                kotlinx.coroutines.delay(600)
+                                if (CallManager.active.value == null && CallManager.incoming.value == null) finishAndRemoveTask()
+                            }
                             a != null && m -> openChat()
                         }
                     }

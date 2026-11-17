@@ -76,6 +76,7 @@ dependencies {
     implementation("dev.chrisbanes.haze:haze:1.1.1")
     implementation("io.getstream:stream-webrtc-android:1.3.9")
     implementation("com.google.firebase:firebase-messaging:24.1.0")
+    implementation("androidx.fragment:fragment:1.8.5") // Firebase pulls in an old one
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-gif:2.7.0")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")

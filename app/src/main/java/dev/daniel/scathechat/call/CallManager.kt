@@ -223,8 +223,8 @@ object CallManager {
 
     fun accept() {
         val inc = incoming.value ?: return
-        stopRinging()
         begin(inc.cid, inc.video, inc.from)
+        stopRinging()
     }
 
     fun join(cid: String, video: Boolean, startedBy: String) {
