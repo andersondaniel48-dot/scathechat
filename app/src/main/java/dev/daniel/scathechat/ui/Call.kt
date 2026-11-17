@@ -119,12 +119,13 @@ fun CallOverlay(acceptWithPermissions: (Boolean, () -> Unit) -> Unit) {
 }
 
 /** Full-screen layer that swallows touches so nothing underneath reacts. */
+/**
+ * Keeps touches from reaching the chat underneath. Just having a pointer handler here is enough for that;
+ * it must NOT consume events, or every button on top treats its own tap as cancelled.
+ */
 private fun Modifier.blockTouches(): Modifier = this.pointerInput(Unit) {
     awaitPointerEventScope {
-        while (true) {
-            val e = awaitPointerEvent()
-            e.changes.forEach { if (!it.isConsumed) it.consume() }
-        }
+        while (true) awaitPointerEvent()
     }
 }
 
