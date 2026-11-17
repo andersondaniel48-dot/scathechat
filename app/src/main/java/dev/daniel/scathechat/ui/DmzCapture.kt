@@ -50,7 +50,7 @@ import kotlin.coroutines.resume
 
 /**
  * Collects what the interactive DMZ map sites load (their map data, scripts and the addresses of their map
- * pieces) into one zip the user can hand to Claude, so we can build our own map from the same official data.
+ * pieces) into one zip saved to Downloads, which the user can hand to Claude, so we can build our own map from the same official data.
  * Nothing is uploaded anywhere by this: it opens the share sheet and the user decides.
  */
 private val CAPTURE_PAGES = listOf(
@@ -162,15 +162,33 @@ fun DmzCaptureScreen(onDone: () -> Unit) {
                 }
             }
         }
-        status = "Done. Share the file with Claude."
-        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", zip)
-        ctx.startActivity(
-            Intent.createChooser(
-                Intent(Intent.ACTION_SEND).setType("application/zip").putExtra(Intent.EXTRA_STREAM, uri)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
-                "Send map data",
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
+        val name = "scathe-dmz-map-data-${System.currentTimeMillis() / 1000}.zip"
+        val saved = withContext(Dispatchers.IO) {
+            runCatching {
+                if (android.os.Build.VERSION.SDK_INT < 29) return@runCatching false
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/zip")
+                    put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                }
+                val r = ctx.contentResolver
+                val uri = r.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return@runCatching false
+                r.openOutputStream(uri)?.use { out -> zip.inputStream().use { it.copyTo(out) } } != null
+            }.getOrDefault(false)
+        }
+        if (saved) {
+            status = "Saved to your Downloads folder as $name (${zip.length() / 1024} KB). Attach it in the Claude chat."
+        } else {
+            status = "Couldn't save to Downloads on this phone, so pick where to send it."
+            val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", zip)
+            ctx.startActivity(
+                Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).setType("application/zip").putExtra(Intent.EXTRA_STREAM, uri)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
+                    "Send map data",
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
     }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF0B0705))) {
